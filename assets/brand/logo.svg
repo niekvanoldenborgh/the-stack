@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    The Stack — brand mark.
+
+    Three layers, widening downward: a stack built from a stable base. Kept to
+    flat geometry with generous corner radii so it survives being rendered at
+    48px in a browser tab, and so the Android monochrome variant is a straight
+    colour swap rather than a redraw.
+
+    Content sits inside a 600x420 box centred on the canvas, which keeps it
+    within the Android adaptive-icon safe zone (the centre 66% of 1024).
+  -->
+  <defs>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E4FF8F"/>
+      <stop offset="100%" stop-color="#C9F24D"/>
+    </linearGradient>
+  </defs>
+
+  <!-- top layer -->
+  <rect x="312" y="302" width="400" height="112" rx="34" fill="url(#top)"/>
+  <!-- middle layer -->
+  <rect x="272" y="456" width="480" height="112" rx="34" fill="#C9F24D" opacity="0.66"/>
+  <!-- base layer -->
+  <rect x="232" y="610" width="560" height="112" rx="34" fill="#C9F24D" opacity="0.38"/>
+</svg>

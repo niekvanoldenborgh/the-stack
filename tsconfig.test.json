@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": ".test-build",
+    "rootDir": "src",
+    "types": []
+  },
+  "include": ["src/domain/**/*.ts", "src/engine/**/*.ts", "src/lib/date.ts"]
+}
