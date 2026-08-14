@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { getPeptide } from '../../src/domain/peptides';
-import type { PhaseKind, ScheduledDose, Severity } from '../../src/domain/types';
+import { severityBand } from '../../src/domain/sideEffects';
+import type { PhaseKind, ScheduledDose } from '../../src/domain/types';
 import { buildCyclePhases, generateSchedule } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import {
@@ -62,7 +63,7 @@ const PHASE_META: Record<PhaseKind, { label: string; color: string; tone?: Sever
   washout: { label: 'Rotating off', color: colors.textFaint },
 };
 
-const SEVERITY_TONE: Record<Severity, SeverityTone> = {
+const SEVERITY_BAND_TONE: Record<'mild' | 'moderate' | 'severe', SeverityTone> = {
   mild: 'info',
   moderate: 'moderate',
   severe: 'high',
@@ -96,7 +97,8 @@ interface SideEffectEvent {
   key: string;
   time: string;
   label: string;
-  severity: Severity;
+  /** Self-reported 1–10, see `severityBand` for the display bucketing. */
+  severity: number;
   note?: string;
 }
 
@@ -388,7 +390,7 @@ function DoseTimelineRow({ event, first, last }: { event: DoseEvent; first: bool
 }
 
 function SideEffectTimelineRow({ event, first, last }: { event: SideEffectEvent; first: boolean; last: boolean }) {
-  const tone = SEVERITY_TONE[event.severity];
+  const tone = SEVERITY_BAND_TONE[severityBand(event.severity)];
   return (
     <TimelineRow time="" tone={tone} first={first} last={last}>
       <Row justify="space-between" align="flex-start">
@@ -396,7 +398,7 @@ function SideEffectTimelineRow({ event, first, last }: { event: SideEffectEvent;
           <Body>{event.label}</Body>
           {event.note ? <Small style={{ marginTop: 2 }}>{event.note}</Small> : null}
         </View>
-        <Badge label={event.severity} tone={tone} />
+        <Badge label={`${event.severity}/10`} tone={tone} />
       </Row>
     </TimelineRow>
   );

@@ -982,9 +982,9 @@ describe('analytics', () => {
 
   it('buckets side effects by week and severity', () => {
     const entries = [
-      { id: '1', date: '2026-08-05', label: 'Nausea', severity: 'mild' },
-      { id: '2', date: '2026-08-04', label: 'Headache', severity: 'severe' },
-      { id: '3', date: '2026-07-29', label: 'Bloating', severity: 'moderate' },
+      { id: '1', date: '2026-08-05', label: 'Nausea', severity: 2 },
+      { id: '2', date: '2026-08-04', label: 'Headache', severity: 9 },
+      { id: '3', date: '2026-07-29', label: 'Bloating', severity: 5 },
     ];
     const series = sideEffectsByWeek(entries, 3, FROM);
     assert.equal(series[2].mild, 1);

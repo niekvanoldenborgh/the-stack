@@ -508,7 +508,13 @@ export interface SideEffectLog {
   id: string;
   date: string;
   label: string;
-  severity: Severity;
+  /**
+   * Self-reported severity, 1 (least) – 10 (most), for this symptom. Numeric
+   * rather than the `Severity` band used for catalogue data — the user picks a
+   * number, nothing is defaulted (THEA-9 P&S sign-off). See
+   * `severityBand` in `domain/sideEffects.ts` for the display bucketing.
+   */
+  severity: number;
   note?: string;
 }
 

@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { PEPTIDES, getPeptide, searchPeptides } from '../../src/domain/peptides';
-import { SIDE_EFFECT_OPTIONS } from '../../src/domain/sideEffects';
-import type { Dose, DoseUnit, InjectionSite, Severity } from '../../src/domain/types';
+import { SEVERITY_MAX, SEVERITY_MIN, SIDE_EFFECT_OPTIONS, severityBand } from '../../src/domain/sideEffects';
+import type { Dose, DoseUnit, InjectionSite } from '../../src/domain/types';
 import { concentration, formatDose, reconstitute } from '../../src/engine/dosing';
 import { useAppStore } from '../../src/store/useAppStore';
 import { BodyFigure, INJECTION_SITE_LABELS } from '../../src/ui/BodyFigure';
@@ -36,7 +36,6 @@ const MODES: { key: Mode; label: string }[] = [
 
 /** Units a user can log an injection in. `pct` is topical-only, so excluded. */
 const DOSE_UNITS: DoseUnit[] = ['mcg', 'mg', 'iu'];
-const SEVERITIES: Severity[] = ['mild', 'moderate', 'severe'];
 
 function nowHHmm(): string {
   const d = new Date();
@@ -103,7 +102,9 @@ function InjectionLogger() {
   const [peptideId, setPeptideId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [doseValue, setDoseValue] = useState('');
-  const [doseUnit, setDoseUnit] = useState<DoseUnit>('mcg');
+  // No default unit (P&S sign-off, THEA-9): the user picks every time, so a
+  // stale pre-selection can never carry a mg/mcg mistake into the log.
+  const [doseUnit, setDoseUnit] = useState<DoseUnit | null>(null);
   const [drawn, setDrawn] = useState('');
   const [time, setTime] = useState(nowHHmm());
   const [site, setSite] = useState<InjectionSite | null>(null);
@@ -115,7 +116,7 @@ function InjectionLogger() {
 
   const doseNum = parseNumber(doseValue);
   const drawnNum = parseNumber(drawn);
-  const canSave = Boolean(peptideId) && doseNum > 0 && site !== null;
+  const canSave = Boolean(peptideId) && doseNum > 0 && doseUnit !== null && site !== null;
 
   // Warn, never block, when the entered dose exceeds the compound's published
   // maximum — the user already injected, so the log must stay true (AGENTS.md
@@ -127,20 +128,22 @@ function InjectionLogger() {
       ? doseNum > selectedPeptide.dosing.hardMax
       : false;
 
+  // Double-check, not a default: flag it if the picked unit doesn't match how
+  // the compound is normally dosed, so a mg/mcg mixup gets caught before save
+  // rather than defaulted away (P&S sign-off, THEA-9).
+  const unitMismatch =
+    selectedPeptide && doseUnit !== null && doseUnit !== selectedPeptide.dosing.unit;
+
   const pickPeptide = (id: string) => {
     setPeptideId(id);
     setSearch('');
-    // Match the unit selector to how the compound is measured — this prevents
-    // mg/mcg confusion at the syringe. It is the *unit*, never the amount: the
-    // dose field stays blank (no prefilled number = no suggestion).
-    const unit = getPeptide(id)?.dosing.unit;
-    if (unit === 'mcg' || unit === 'mg' || unit === 'iu') setDoseUnit(unit);
   };
 
   const reset = () => {
     setPeptideId(null);
     setSearch('');
     setDoseValue('');
+    setDoseUnit(null);
     setDrawn('');
     setTime(nowHHmm());
     setSite(null);
@@ -149,7 +152,7 @@ function InjectionLogger() {
   };
 
   const save = () => {
-    if (!canSave || !peptideId || !site) return;
+    if (!canSave || !peptideId || !site || !doseUnit) return;
     const dose: Dose = { value: doseNum, unit: doseUnit };
     logInjection({
       date: today(),
@@ -227,6 +230,16 @@ function InjectionLogger() {
           })}
         </Row>
       </Row>
+      {unitMismatch && selectedPeptide ? (
+        <>
+          <Spacer size={spacing.sm} />
+          <Callout tone="moderate">
+            {`Double-check the unit — ${selectedPeptide.name} is normally dosed in ${
+              selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
+            }, and you picked ${doseUnit === 'iu' ? 'IU' : doseUnit}. Logged as entered either way.`}
+          </Callout>
+        </>
+      ) : null}
       {overMax && selectedPeptide ? (
         <>
           <Spacer size={spacing.sm} />
@@ -323,11 +336,40 @@ function PainScale({ value, onChange }: { value: number; onChange: (n: number) =
             accessibilityState={{ selected: active }}
             onPress={() => onChange(n)}
             style={[
-              styles.painDot,
+              styles.scaleDot,
               { backgroundColor: active ? colors.accent : colors.surface, borderColor: active ? colors.accent : colors.border },
             ]}
           >
-            <Text style={[styles.painLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
+            <Text style={[styles.scaleLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
+          </Pressable>
+        );
+      })}
+    </Row>
+  );
+}
+
+/**
+ * 1–10 self-reported side-effect severity as a tap scale. `value` is `null`
+ * until the user taps one — there is no default (P&S sign-off, THEA-9).
+ */
+function SeverityScale({ value, onChange }: { value: number | null; onChange: (n: number) => void }) {
+  return (
+    <Row gap={spacing.xs} wrap>
+      {Array.from({ length: SEVERITY_MAX - SEVERITY_MIN + 1 }, (_, i) => i + SEVERITY_MIN).map((n) => {
+        const active = n === value;
+        return (
+          <Pressable
+            key={n}
+            accessibilityRole="button"
+            accessibilityLabel={`Severity ${n} of ${SEVERITY_MAX}`}
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(n)}
+            style={[
+              styles.scaleDot,
+              { backgroundColor: active ? colors.accent : colors.surface, borderColor: active ? colors.accent : colors.border },
+            ]}
+          >
+            <Text style={[styles.scaleLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
           </Pressable>
         );
       })}
@@ -346,7 +388,9 @@ function SideEffectLogger() {
 
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [other, setOther] = useState('');
-  const [severity, setSeverity] = useState<Severity>('mild');
+  // No default (P&S sign-off, THEA-9): the user picks a number, nothing is
+  // pre-selected.
+  const [severity, setSeverity] = useState<number | null>(null);
   const [note, setNote] = useState('');
 
   const chosenLabels = useMemo(() => {
@@ -356,15 +400,17 @@ function SideEffectLogger() {
     return labels;
   }, [selected, other]);
 
+  const canSave = chosenLabels.length > 0 && severity !== null;
+
   const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const save = () => {
-    if (chosenLabels.length === 0) return;
+    if (!canSave || severity === null) return;
     const date = today();
     logSideEffects(chosenLabels.map((label) => ({ date, label, severity, note: note.trim() || undefined })));
     setSelected({});
     setOther('');
-    setSeverity('mild');
+    setSeverity(null);
     setNote('');
   };
 
@@ -402,27 +448,9 @@ function SideEffectLogger() {
       />
 
       <SectionTitle>How bad, overall?</SectionTitle>
-      <Row gap={spacing.sm}>
-        {SEVERITIES.map((s) => {
-          const active = s === severity;
-          return (
-            <Pressable
-              key={s}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              onPress={() => setSeverity(s)}
-              style={[
-                styles.severityPill,
-                { backgroundColor: active ? colors.accentDim : colors.surface, borderColor: active ? colors.accent : colors.border },
-              ]}
-            >
-              <Text style={[typography.bodyStrong, { color: active ? colors.accent : colors.textMuted, textTransform: 'capitalize' }]}>
-                {s}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </Row>
+      <Small>1 is barely there, 10 is the worst you've felt it. Pick a number — nothing is pre-selected.</Small>
+      <Spacer size={spacing.sm} />
+      <SeverityScale value={severity} onChange={setSeverity} />
 
       <SectionTitle>Notes</SectionTitle>
       <TextInput
@@ -435,7 +463,7 @@ function SideEffectLogger() {
       />
 
       <Spacer size={spacing.lg} />
-      <Button label="Log how you feel" onPress={save} disabled={chosenLabels.length === 0} />
+      <Button label="Log how you feel" onPress={save} disabled={!canSave} />
 
       <SectionTitle>Reconstitution ratio</SectionTitle>
       <ReconstitutionCalculator />
@@ -448,8 +476,8 @@ function SideEffectLogger() {
           <ListRow
             key={log.id}
             title={log.label}
-            subtitle={`${formatShort(log.date)} · ${log.severity}${log.note ? ` · ${log.note}` : ''}`}
-            tone={log.severity === 'severe' ? 'high' : undefined}
+            subtitle={`${formatShort(log.date)} · ${log.severity}/10${log.note ? ` · ${log.note}` : ''}`}
+            tone={severityBand(log.severity) === 'severe' ? 'high' : undefined}
             right={<Button label="Delete" variant="ghost" onPress={() => removeSideEffect(log.id)} />}
           />
         ))
@@ -627,14 +655,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.pill,
   },
-  severityPill: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-  },
-  painDot: {
+  scaleDot: {
     width: 40,
     height: 40,
     alignItems: 'center',
@@ -642,7 +663,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
   },
-  painLabel: {
+  scaleLabel: {
     fontFamily: fonts.mono,
     fontSize: 14,
   },

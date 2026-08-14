@@ -1,4 +1,5 @@
 import { getExercise } from '../domain/exercises';
+import { severityBand } from '../domain/sideEffects';
 import type { DoseLog, MuscleGroup, ScheduledDose, SideEffectLog, WorkoutSessionLog } from '../domain/types';
 import { addDays, diffDays, startOfWeek, today } from '../lib/date';
 import { estimatedOneRepMax } from './workout';
@@ -185,9 +186,9 @@ export function sideEffectsByWeek(entries: SideEffectLog[], weeks = 8, from = to
     const inWeek = entries.filter((e) => e.date >= weekStart && e.date <= weekEnd);
     const point: SideEffectPoint = {
       weekStart,
-      mild: inWeek.filter((e) => e.severity === 'mild').length,
-      moderate: inWeek.filter((e) => e.severity === 'moderate').length,
-      severe: inWeek.filter((e) => e.severity === 'severe').length,
+      mild: inWeek.filter((e) => severityBand(e.severity) === 'mild').length,
+      moderate: inWeek.filter((e) => severityBand(e.severity) === 'moderate').length,
+      severe: inWeek.filter((e) => severityBand(e.severity) === 'severe').length,
       total: inWeek.length,
     };
     series.push(point);

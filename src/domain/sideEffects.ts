@@ -16,6 +16,24 @@ export interface SideEffectOption {
   label: string;
 }
 
+/** Bounds of the user-entered severity scale (THEA-9 P&S sign-off): 1 = least, 10 = most severe. No default. */
+export const SEVERITY_MIN = 1;
+export const SEVERITY_MAX = 10;
+
+/**
+ * Buckets a 1–10 self-reported severity into the mild/moderate/severe bands
+ * the app already uses for chart colour and badges. Cut points follow the
+ * standard clinical Numeric Rating Scale convention (1–3 mild, 4–6 moderate,
+ * 7–10 severe) — same convention as the existing 0–10 injection pain scale.
+ * Flagged for Product & Safety to confirm; not a dosing decision, only a
+ * display grouping.
+ */
+export function severityBand(score: number): 'mild' | 'moderate' | 'severe' {
+  if (score >= 7) return 'severe';
+  if (score >= 4) return 'moderate';
+  return 'mild';
+}
+
 export const SIDE_EFFECT_OPTIONS: SideEffectOption[] = [
   { id: 'nausea', label: 'Nausea' },
   { id: 'heartburn', label: 'Heartburn' },

@@ -331,7 +331,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'the-stack-v1',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => AsyncStorage),
       /**
        * v1 profiles predate the risk dial and current-use tracking. Default to
@@ -345,9 +345,20 @@ export const useAppStore = create<AppState>()(
        *
        * v3→v4 (THEA-8) adds `summaryOrder`. Same merge-over-DEFAULT_SETTINGS
        * approach — `pkModalAcknowledgedAt` is optional so it needs no branch.
+       *
+       * v4→v5 (THEA-9 P&S sign-off) changes `SideEffectLog.severity` from the
+       * mild/moderate/severe band to a 1–10 self-reported number. Old entries
+       * are remapped to the midpoint of their old band (matching the cut
+       * points in `domain/sideEffects.ts#severityBand`) rather than dropped,
+       * so a symptom logged before this change still renders and buckets
+       * correctly.
        */
       migrate: (persisted, version) => {
-        const state = persisted as { profile?: UserProfile | null; settings?: Partial<Settings> } | null;
+        const state = persisted as {
+          profile?: UserProfile | null;
+          settings?: Partial<Settings>;
+          sideEffectLogs?: Array<{ severity: unknown } & Record<string, unknown>>;
+        } | null;
         if (version < 2 && state?.profile) {
           state.profile = {
             ...state.profile,
@@ -364,6 +375,12 @@ export const useAppStore = create<AppState>()(
         }
         if (version < 4 && state) {
           state.settings = { ...DEFAULT_SETTINGS, ...(state.settings ?? {}) };
+        }
+        if (version < 5 && state?.sideEffectLogs) {
+          const legacyMidpoint: Record<string, number> = { mild: 3, moderate: 5, severe: 8 };
+          state.sideEffectLogs = state.sideEffectLogs.map((log) =>
+            typeof log.severity === 'string' ? { ...log, severity: legacyMidpoint[log.severity] ?? 5 } : log,
+          );
         }
         return state as never;
       },
