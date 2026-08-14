@@ -1,0 +1,4 @@
+# Local runtime state — see pendingStore.cjs. Not the final persistence
+# design (see README.md, "Decision 2"); never commit real message/interaction
+# mappings or (post-decision) secret values.
+.pending-store.json
