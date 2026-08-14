@@ -1,8 +1,10 @@
 # Spec: estimated medication levels (PK) + the no-dosage boundary
 
-**Issue:** THEA-6 · **Parent:** THEA-4 · **Owner:** Product & Safety · **Status:** draft, awaiting medical sign-off
+**Issue:** THEA-6 · **Parent:** THEA-4 · **Owner:** Product & Safety · **Status:** **APPROVED — signed off 2026-08-14**
 **Gates:** the Summary page "estimated medication levels" chart, and the Logger's peptide:water ratio display.
-**No app code ships against this document until the items in §7 are signed off by the human medical owner.**
+**Sign-off:** the human medical owner answered the THEA-4 decision card `pk-signoff` on 2026-08-14T14:38Z with *"Sign off all 8 as recommended"* — MED-SIGNOFF-1 through 8 are accepted at the recommendation given in §7. This document is now binding on implementation; §6 remains open (see below).
+
+**What is still open.** CAL-1/CAL-2/CAL-3 (§6) were **not** part of the sign-off and remain unanswered. They do not block v1, because MED-SIGNOFF-4 fixes v1 to the normalised "% of steady state" axis, which is invariant to the absolute clearance scale. **An absolute ng/mL axis must not ship until CAL-1 and CAL-2 are resolved and re-signed.** Changing the axis is a new medical decision, not an implementation detail.
 
 ---
 
@@ -423,11 +425,15 @@ To be added to `tests/engine.test.cjs` when the code lands. Per AGENTS.md, these
 
 **None of CAL-1/2/3 block v1**, because v1 ships the normalised axis (U1), which is invariant to the absolute clearance scale. That is the main reason for choosing it.
 
+**Status after the 2026-08-14 sign-off: still open.** The sign-off covered §7 only. CAL-1 and CAL-2 remain gates on any absolute ng/mL axis; CAL-3 is disclosure-only and is discharged by the §2.3 copy.
+
 ---
 
-## 7. For the human medical owner — sign-off list
+## 7. Medical sign-off list — **RESOLVED 2026-08-14**
 
-| # | Decision | Recommendation | Consequence of the other choice |
+**All eight items were signed off at the recommendation shown** (human medical owner, THEA-4 decision card `pk-signoff`, resolved 2026-08-14T14:38Z). The "Recommendation" column below is therefore the **decision**, not a proposal. Any implementation that departs from it needs a fresh sign-off, not a code review.
+
+| # | Decision | Recommendation *(= approved outcome)* | Consequence of the other choice |
 |---|---|---|---|
 | **MED-SIGNOFF-1** | For `doseGuidanceWithheld` compounds: no PK curve, but keep the reconstitution/volume calculator. | Accept the split. | Removing the calculator too pushes users to do the mg→units arithmetic themselves, which is the highest-frequency route to a 10× overdose in this space. |
 | **MED-SIGNOFF-2** | Semaglutide weight exponent: use the derived 0.78, or the conventional fixed allometric 0.75. | Derived 0.78 (traceable to the source paper's own reported exposures). | <2% difference in predicted exposure across 50–150 kg; low stakes either way. |
