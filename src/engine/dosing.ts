@@ -315,6 +315,34 @@ export function doseForWeek(
 }
 
 /**
+ * The concentration a reconstituted vial reaches — the peptide:water ratio,
+ * expressed in the two units a user re-derives at the syringe.
+ *
+ * This depends on nothing but the two numbers the user typed (vial mass and
+ * water), so it is an instrument-surface calculation under the THEA-6 no-dosage
+ * boundary (docs/pk-estimated-levels-spec.md §3.2, C1/C3): pure arithmetic on
+ * user inputs, no dose originated. Every returned figure is meant to be shown
+ * with its unit spelled out — see §3.4(b).
+ */
+export interface Concentration {
+  /** Peptide mass per millilitre of solution. */
+  mgPerMl: number;
+  /** Mass per unit on a U-100 insulin syringe (100 units = 1 mL). */
+  mcgPerUnit: number;
+}
+
+export function concentration(vialAmountMg: number, bacWaterMl: number): Concentration | null {
+  if (vialAmountMg <= 0 || bacWaterMl <= 0) return null;
+  const mgPerMl = vialAmountMg / bacWaterMl;
+  // A U-100 syringe has 100 units per millilitre.
+  const mcgPerUnit = (vialAmountMg * 1000) / (bacWaterMl * 100);
+  return {
+    mgPerMl: Math.round(mgPerMl * 100) / 100,
+    mcgPerUnit: Math.round(mcgPerUnit * 100) / 100,
+  };
+}
+
+/**
  * Reconstitution helper: how much bacteriostatic water to add, and how many
  * insulin-syringe units a dose corresponds to.
  *
@@ -337,10 +365,9 @@ export function reconstitute(
   if (dose.unit === 'pct' || dose.unit === 'iu') return null;
   if (vialAmountMg <= 0 || bacWaterMl <= 0) return null;
 
-  const totalMcg = vialAmountMg * 1000;
-  // A U-100 syringe has 100 units per millilitre.
-  const totalUnits = bacWaterMl * 100;
-  const mcgPerUnit = totalMcg / totalUnits;
+  // Divide on the unrounded ratio; `concentration()` supplies the rounded
+  // figure for display only, so the syringe maths keeps full precision.
+  const mcgPerUnit = (vialAmountMg * 1000) / (bacWaterMl * 100);
 
   const doseMcg = dose.unit === 'mg' ? dose.value * 1000 : dose.value;
   const unitsForDose = doseMcg / mcgPerUnit;
