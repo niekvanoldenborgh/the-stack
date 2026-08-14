@@ -45,6 +45,35 @@ export function peptideHasLevelModel(peptide: Peptide): boolean {
   return true;
 }
 
+/**
+ * §4.2 Tier 3 compounds that fail E5 (half-life too short for a weekly chart
+ * to be legible) rather than E1 (no published PK at all) — tesamorelin,
+ * teriparatide and the GH secretagogues. These get the spec's distinct
+ * short-half-life copy (§2.3) instead of the generic "no model" string.
+ *
+ * The duration phrase for each id is transcribed from the Tier 3 table
+ * (docs/pk-estimated-levels-spec.md §4.2, MED-SIGNOFF-7) — mod-grf-1-29's
+ * "about 30 minutes" is from its own mechanism note (src/domain/peptides/
+ * growth.ts); the rest use the table's own qualitative grouping. Not a new
+ * measurement — do not sharpen these into invented precise figures.
+ */
+export const PK_SHORT_HALF_LIFE_CLEARANCE: Record<string, string> = {
+  tesamorelin: 'well under an hour',
+  teriparatide: 'about an hour',
+  'ipamorelin': 'minutes',
+  'mod-grf-1-29': 'about 30 minutes',
+  sermorelin: 'minutes',
+  'ghrp-2': 'minutes',
+  'ghrp-6': 'minutes',
+  hexarelin: 'minutes',
+  'mk-677': 'a few hours',
+};
+
+/** Returns the §2.3 short-half-life duration phrase for a Tier 3 compound, or null for the generic "no model" copy. */
+export function pkShortHalfLifeClearance(peptideId: string): string | null {
+  return PK_SHORT_HALF_LIFE_CLEARANCE[peptideId] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Units (D2 / invariant 8 — conversion only at the boundary, from an explicit unit)
 // ---------------------------------------------------------------------------
@@ -240,8 +269,12 @@ export function buildLevelSeries(
   const lastDoseHours = relevant[relevant.length - 1]!.atHours;
   const firstDoseHours = relevant[0]!.atHours;
   // Never draw beyond 5 terminal half-lives past the last logged dose, and
-  // never past "now" — this is a level estimate, not a forecast (U7).
-  const windowEnd = Math.min(Math.max(nowEpochHours, lastDoseHours), lastDoseHours + MAX_HALF_LIVES * halfLifeHours);
+  // never past "now" — this is a level estimate, not a forecast (U7). A
+  // same-day log can carry a free-text time later than the current clock
+  // (typo, or intentionally logging for later today), so lastDoseHours can
+  // exceed nowEpochHours; clamp to now outright rather than taking the max
+  // of the two, or the curve would draw past "now" for that window.
+  const windowEnd = Math.min(nowEpochHours, lastDoseHours + MAX_HALF_LIVES * halfLifeHours);
   const windowStart = Math.max(firstDoseHours, windowEnd - DISPLAY_LOOKBACK_DAYS * 24);
 
   const latestDoseMg = relevant[relevant.length - 1]!.doseMg;

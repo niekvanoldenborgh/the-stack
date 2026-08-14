@@ -7,7 +7,7 @@ import { getPeptide } from '../../src/domain/peptides';
 import type { DoseLog, Peptide, PhaseKind, Stack } from '../../src/domain/types';
 import { generateSchedule, summariseCycle } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
-import { buildLevelSeries, peptideHasLevelModel, type LevelSeriesResult } from '../../src/engine/pk';
+import { buildLevelSeries, peptideHasLevelModel, pkShortHalfLifeClearance, type LevelSeriesResult } from '../../src/engine/pk';
 import { addDays, formatShort, relativeLabel, timeToMinutes, today } from '../../src/lib/date';
 import { DEFAULT_SUMMARY_ORDER, selectAdherence, useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
 import { LevelCurve } from '../../src/ui/charts';
@@ -405,13 +405,26 @@ function LevelsSection({
         withModel.map((row) => <LevelChartCard key={row.peptide.id} peptide={row.peptide} series={row.series!} />)
       )}
 
-      {withoutModel.map((row) => (
-        <Callout key={row.peptide.id} tone="info" title={`No level estimate for ${row.peptide.name}`}>
-          We only draw this chart where published human pharmacokinetic data exists to build it from — which currently
-          means semaglutide and tirzepatide. For {row.peptide.name} we would have to invent the numbers, so we don't.
-          Your injections are still logged and still shown on the calendar.
-        </Callout>
-      ))}
+      {withoutModel.map((row) => {
+        const clearsIn = pkShortHalfLifeClearance(row.peptide.id);
+        return (
+          <Callout key={row.peptide.id} tone="info" title={`No level estimate for ${row.peptide.name}`}>
+            {clearsIn ? (
+              <>
+                This compound clears in {clearsIn} — it is out of your system long before the next dose, so a level
+                chart would be a flat line with a spike on it and would tell you nothing useful. What matters for
+                this compound is the response it triggers, not the level of the peptide itself.
+              </>
+            ) : (
+              <>
+                We only draw this chart where published human pharmacokinetic data exists to build it from — which
+                currently means semaglutide and tirzepatide. For {row.peptide.name} we would have to invent the
+                numbers, so we don't. Your injections are still logged and still shown on the calendar.
+              </>
+            )}
+          </Callout>
+        );
+      })}
     </>
   );
 }

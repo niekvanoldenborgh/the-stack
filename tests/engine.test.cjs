@@ -13,6 +13,7 @@ const {
   doseToMg,
   dosingIntervalHours,
   peptideHasLevelModel,
+  pkShortHalfLifeClearance,
   singleDoseConcentrationMgPerL,
   steadyStateAverageMgPerL,
   terminalHalfLifeHours,
@@ -1297,6 +1298,43 @@ describe('estimated medication levels (PK)', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'engine', 'pk.ts'), 'utf8');
     assert.ok(!/from ['"]\.\/dosing['"]/.test(source), 'pk.ts must not import ./dosing');
     assert.ok(!/from ['"]\.\/recommend['"]/.test(source), 'pk.ts must not import ./recommend');
+  });
+
+  it('T11 — U7: a same-day log timed later than "now" never draws the curve past "now" (THEA-19)', () => {
+    const peptide = getPeptide('semaglutide');
+    const now = epochHoursOf('2026-01-08', '08:00');
+    // Logged for later today — free-text time field, ahead of the clock.
+    const futureToday = [injection({ date: '2026-01-08', time: '20:00' })];
+
+    const result = buildLevelSeries(peptide, futureToday, 85, now);
+    for (const point of result.points) {
+      assert.ok(result.anchorEpochHours + point.hoursFromStart <= now + 1e-9, 'point drawn past "now"');
+    }
+
+    // All-future history degrades to an empty window rather than one that runs past now.
+    const wayFuture = [injection({ date: '2026-02-01', time: '08:00' })];
+    const allFuture = buildLevelSeries(peptide, wayFuture, 85, now);
+    assert.deepEqual(allFuture.points, []);
+  });
+
+  it('T12 — Tier 3 short-half-life compounds get the distinct §2.3 copy, other Tier 3 compounds get null (THEA-19)', () => {
+    const shortHalfLife = [
+      'tesamorelin',
+      'teriparatide',
+      'ipamorelin',
+      'mod-grf-1-29',
+      'sermorelin',
+      'ghrp-2',
+      'ghrp-6',
+      'hexarelin',
+      'mk-677',
+    ];
+    for (const id of shortHalfLife) {
+      const clearance = pkShortHalfLifeClearance(id);
+      assert.ok(typeof clearance === 'string' && clearance.length > 0, `${id}: expected a clearance phrase`);
+    }
+    // A Tier 3 compound that fails on E1 (no published PK), not E5, keeps the generic copy.
+    assert.equal(pkShortHalfLifeClearance('bpc-157'), null);
   });
 
   it('converts dose units at the boundary only, and never guesses iu/pct', () => {
