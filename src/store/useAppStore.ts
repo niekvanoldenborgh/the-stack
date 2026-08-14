@@ -389,6 +389,13 @@ export const useAppStore = create<AppState>()(
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
+        // Demo harness only. With the flag unset this branch is dead and the
+        // seed module is never imported or executed, so production behaviour is
+        // byte-identical. The import is dynamic so the seed is never pulled into
+        // the normal app path. See docs/demo-harness.md.
+        if (process.env.EXPO_PUBLIC_DEMO === '1') {
+          void import('../dev/demoSeed').then(({ seedDemoData }) => seedDemoData(useAppStore));
+        }
       },
     },
   ),
