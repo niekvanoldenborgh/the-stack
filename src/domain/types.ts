@@ -458,6 +458,70 @@ export interface SideEffectLog {
   note?: string;
 }
 
+/**
+ * A single self-reported progress reading against a goal, e.g. a bodyweight in
+ * kg or a 1–5 skin-clarity rating.
+ *
+ * These are the user's own measurements: the app charts what is entered and
+ * computes the change between readings, but never sets a target or judges a
+ * value as normal or abnormal. That would be medical advice the app is not in a
+ * position to give.
+ */
+export interface Measurement {
+  id: string;
+  /** References a `Metric.id` from the catalogue, or `'custom'`. */
+  metricId: string;
+  /** Present only when `metricId === 'custom'`. */
+  customLabel?: string;
+  customUnit?: string;
+  /** ISO date (no time) the reading was taken. */
+  date: string;
+  value: number;
+  note?: string;
+}
+
+/**
+ * Front-of-body injection sites the user can mark on the figure in the Logger.
+ * Left/right are the user's own left/right. Kept coarse on purpose — this is a
+ * rotation aid, not a clinical map, and finer granularity would imply a
+ * precision the figure does not have.
+ */
+export type InjectionSite =
+  | 'abdomen_left'
+  | 'abdomen_right'
+  | 'thigh_left'
+  | 'thigh_right'
+  | 'upper_arm_left'
+  | 'upper_arm_right'
+  | 'glute_left'
+  | 'glute_right';
+
+/**
+ * A record of an injection the user has already given themselves.
+ *
+ * Everything numeric here is the user's own entry. The app never suggests,
+ * prefills or computes the dose — this is an instrument surface under the
+ * THEA-6 no-dosage boundary (docs/pk-estimated-levels-spec.md §3), so a `Dose`
+ * only ever exists here because the user typed it, and it carries its own unit
+ * (AGENTS.md invariant 8 — no implicit unit conversion).
+ */
+export interface InjectionLog {
+  id: string;
+  /** ISO date (no time) of the injection. */
+  date: string;
+  /** Local 24h time, "HH:mm". */
+  time: string;
+  peptideId: string;
+  /** User-entered dose. Never suggested by the app. */
+  dose: Dose;
+  /** Volume drawn on the syringe as the user measured it. Recorded, never computed. */
+  drawnUnits?: number;
+  site: InjectionSite;
+  /** Self-reported injection pain, 0 (none) – 10 (worst). */
+  painLevel: number;
+  note?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Workouts
 // ---------------------------------------------------------------------------

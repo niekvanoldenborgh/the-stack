@@ -5,6 +5,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import type {
   DoseLog,
   DoseLogStatus,
+  InjectionLog,
+  Measurement,
   ScheduledDose,
   SideEffectLog,
   Stack,
@@ -19,10 +21,40 @@ import { evaluateStack } from '../engine/safety';
 import { generateProgram } from '../engine/workout';
 import { addDays, today } from '../lib/date';
 
+/** Body-measurement display units. Dose units are never converted (see AGENTS.md). */
+export type MassUnit = 'kg' | 'lb';
+export type LengthUnit = 'cm' | 'ft';
+/** 'light' is not yet implemented — the palette refactor is tracked separately. */
+export type ThemePreference = 'system' | 'dark';
+
+/** Reminder categories the user can silence independently. */
+export interface NotificationPurposes {
+  /** Per-dose "time to inject" reminders. Master switch is `remindersEnabled`. */
+  doseReminders: boolean;
+  /** Alerts when a titration step raises the dose. */
+  titrationChanges: boolean;
+  /** Alerts when a compound moves on/off cycle. */
+  cycleTransitions: boolean;
+  /** Nudges to log how you are feeling. */
+  sideEffectCheckins: boolean;
+}
+
 interface Settings {
   remindersEnabled: boolean;
   /** Overrides for the default clock time of each slot, keyed by TimeOfDay. */
   customTimes: Record<string, string>;
+  /** Mass unit for display of bodyweight and vial contents. */
+  massUnit: MassUnit;
+  /** Length unit for display of height. */
+  lengthUnit: LengthUnit;
+  theme: ThemePreference;
+  /**
+   * Minutes before each scheduled injection time to fire an alert. `0` means an
+   * alert at the injection time itself. Sorted, de-duplicated, non-negative —
+   * e.g. `[2, 0]` alerts two minutes before and again at the inject time.
+   */
+  alarmOffsetsMin: number[];
+  notifications: NotificationPurposes;
 }
 
 interface AppState {
@@ -32,6 +64,9 @@ interface AppState {
   activeStackId: string | null;
   doseLogs: Record<string, DoseLog>;
   sideEffectLogs: SideEffectLog[];
+  injectionLogs: InjectionLog[];
+  /** Self-reported goal-progress readings (bodyweight, ratings, etc.). */
+  measurements: Measurement[];
   program: WorkoutProgram | null;
   workoutLogs: WorkoutSessionLog[];
   settings: Settings;
@@ -55,7 +90,19 @@ interface AppState {
   logDose: (dose: ScheduledDose, status: DoseLogStatus, note?: string) => void;
   clearDoseLog: (scheduledDoseId: string) => void;
   logSideEffect: (entry: Omit<SideEffectLog, 'id'>) => void;
+  /**
+   * Log several symptoms from one check-in. One `SideEffectLog` per symptom
+   * (they share date/severity/note) so the existing per-severity Results trend
+   * keeps counting each one, rather than a new multi-label shape it can't read.
+   */
+  logSideEffects: (entries: Omit<SideEffectLog, 'id'>[]) => void;
   removeSideEffect: (id: string) => void;
+
+  logInjection: (entry: Omit<InjectionLog, 'id'>) => void;
+  removeInjection: (id: string) => void;
+
+  addMeasurement: (entry: Omit<Measurement, 'id'>) => void;
+  removeMeasurement: (id: string) => void;
 
   createProgram: () => WorkoutProgram | null;
   logWorkout: (log: Omit<WorkoutSessionLog, 'id'>) => void;
@@ -68,6 +115,18 @@ interface AppState {
 const DEFAULT_SETTINGS: Settings = {
   remindersEnabled: false,
   customTimes: {},
+  massUnit: 'kg',
+  lengthUnit: 'cm',
+  theme: 'dark',
+  // Alert once, at the injection time. The alarm screen lets the user add
+  // lead-in offsets (e.g. two minutes before).
+  alarmOffsetsMin: [0],
+  notifications: {
+    doseReminders: true,
+    titrationChanges: true,
+    cycleTransitions: true,
+    sideEffectCheckins: false,
+  },
 };
 
 export const useAppStore = create<AppState>()(
@@ -79,8 +138,10 @@ export const useAppStore = create<AppState>()(
       activeStackId: null,
       doseLogs: {},
       sideEffectLogs: [],
+      injectionLogs: [],
       program: null,
       workoutLogs: [],
+      measurements: [],
       settings: DEFAULT_SETTINGS,
 
       setHydrated: (value) => set({ hydrated: value }),
@@ -188,8 +249,37 @@ export const useAppStore = create<AppState>()(
           ],
         })),
 
+      logSideEffects: (entries) =>
+        set((state) => {
+          const stamp = Date.now().toString(36);
+          const created = entries.map((entry, i) => ({ ...entry, id: `se_${stamp}_${state.sideEffectLogs.length + i}` }));
+          return { sideEffectLogs: [...created, ...state.sideEffectLogs] };
+        }),
+
       removeSideEffect: (id) =>
         set((state) => ({ sideEffectLogs: state.sideEffectLogs.filter((e) => e.id !== id) })),
+
+      addMeasurement: (entry) =>
+        set((state) => ({
+          measurements: [
+            { ...entry, id: `m_${Date.now().toString(36)}_${state.measurements.length}` },
+            ...state.measurements,
+          ],
+        })),
+
+      removeMeasurement: (id) =>
+        set((state) => ({ measurements: state.measurements.filter((m) => m.id !== id) })),
+
+      logInjection: (entry) =>
+        set((state) => ({
+          injectionLogs: [
+            { ...entry, id: `inj_${Date.now().toString(36)}_${state.injectionLogs.length}` },
+            ...state.injectionLogs,
+          ],
+        })),
+
+      removeInjection: (id) =>
+        set((state) => ({ injectionLogs: state.injectionLogs.filter((e) => e.id !== id) })),
 
       createProgram: () => {
         const { profile, stacks, activeStackId } = get();
@@ -219,6 +309,8 @@ export const useAppStore = create<AppState>()(
           activeStackId: null,
           doseLogs: {},
           sideEffectLogs: [],
+          injectionLogs: [],
+          measurements: [],
           program: null,
           workoutLogs: [],
           settings: DEFAULT_SETTINGS,
@@ -226,20 +318,32 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'the-stack-v1',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => AsyncStorage),
       /**
        * v1 profiles predate the risk dial and current-use tracking. Default to
        * the balanced setting and no current use rather than leaving the fields
        * undefined, so the UI never has to render an unset dial.
+       *
+       * v2→v3 adds display units, theme, alarm offsets and per-purpose
+       * notification toggles. Merge over DEFAULT_SETTINGS so a partial persisted
+       * `settings` from v2 (only `remindersEnabled`/`customTimes`) gains the new
+       * fields rather than leaving the settings screens rendering undefined.
        */
       migrate: (persisted, version) => {
-        const state = persisted as { profile?: UserProfile | null } | null;
+        const state = persisted as { profile?: UserProfile | null; settings?: Partial<Settings> } | null;
         if (version < 2 && state?.profile) {
           state.profile = {
             ...state.profile,
             currentPeptides: state.profile.currentPeptides ?? [],
             riskTolerance: state.profile.riskTolerance ?? 3,
+          };
+        }
+        if (version < 3 && state) {
+          state.settings = {
+            ...DEFAULT_SETTINGS,
+            ...(state.settings ?? {}),
+            notifications: { ...DEFAULT_SETTINGS.notifications, ...(state.settings?.notifications ?? {}) },
           };
         }
         return state as never;
@@ -250,6 +354,8 @@ export const useAppStore = create<AppState>()(
         activeStackId: state.activeStackId,
         doseLogs: state.doseLogs,
         sideEffectLogs: state.sideEffectLogs,
+        injectionLogs: state.injectionLogs,
+        measurements: state.measurements,
         program: state.program,
         workoutLogs: state.workoutLogs,
         settings: state.settings,

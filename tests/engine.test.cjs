@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
 
 const { PEPTIDES, getPeptide } = require('../.test-build/domain/peptides');
-const { computeDose, doseForWeek, reconstitute, roundDose } = require('../.test-build/engine/dosing');
+const { computeDose, concentration, doseForWeek, reconstitute, roundDose } = require('../.test-build/engine/dosing');
+const { SIDE_EFFECT_OPTIONS } = require('../.test-build/domain/sideEffects');
 const {
   aggregateSideEffects,
   evaluateStack,
@@ -24,6 +25,8 @@ const {
   trainingSummary,
   weeklyVolume,
 } = require('../.test-build/engine/analytics');
+const { summariseMeasurements, seriesKey } = require('../.test-build/engine/progress');
+const { METRICS, METRIC_BY_ID, metricsForGoals, CUSTOM_METRIC_ID } = require('../.test-build/domain/metrics');
 
 function makeProfile(overrides = {}) {
   return {
@@ -187,6 +190,62 @@ describe('reconstitution calculator', () => {
   it('warns when a dose overflows the syringe', () => {
     const result = reconstitute(1, 5, { value: 900, unit: 'mcg' });
     assert.ok(result.warning.includes('exceeds'));
+  });
+});
+
+describe('concentration (peptide:water ratio)', () => {
+  it('reports both equivalent forms from the same inputs', () => {
+    // 5 mg in 2 ml = 2.5 mg/ml = 25 mcg per unit (THEA-6 §3.2 C3 example).
+    const c = concentration(5, 2);
+    assert.equal(c.mgPerMl, 2.5);
+    assert.equal(c.mcgPerUnit, 25);
+  });
+
+  it('is consistent with reconstitute()', () => {
+    // Same numbers, one source of truth: concentration's mcgPerUnit must match
+    // what reconstitute reports, so the ratio display and the syringe maths
+    // never diverge.
+    const c = concentration(10, 3);
+    const r = reconstitute(10, 3, { value: 500, unit: 'mcg' });
+    assert.equal(c.mcgPerUnit, r.mcgPerUnit);
+  });
+
+  it('returns null for non-positive inputs rather than guessing', () => {
+    assert.equal(concentration(0, 2), null);
+    assert.equal(concentration(5, 0), null);
+    assert.equal(concentration(-1, 2), null);
+  });
+});
+
+describe('logger side-effect list (THEA-9)', () => {
+  const REQUIRED = [
+    'Nausea',
+    'Heartburn',
+    'Food noise',
+    'Suppressed appetite',
+    'Rash',
+    'Injection-site reaction',
+    'Constipation',
+    'Belching',
+    'Mood swings',
+    'Indigestion',
+    'Metallic taste',
+    'Stomach pain',
+    'Hair loss',
+    'Fatigue',
+    'Migraine',
+  ];
+
+  it('offers exactly the reviewed set of side effects', () => {
+    const labels = SIDE_EFFECT_OPTIONS.map((o) => o.label);
+    assert.deepEqual(labels, REQUIRED);
+  });
+
+  it('has unique, stable ids and labels', () => {
+    const ids = SIDE_EFFECT_OPTIONS.map((o) => o.id);
+    const labels = SIDE_EFFECT_OPTIONS.map((o) => o.label);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.equal(new Set(labels).size, labels.length);
   });
 });
 
@@ -969,5 +1028,107 @@ describe('progression', () => {
 
   it('returns nothing without history', () => {
     assert.equal(suggestNextLoad([], 8), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Progress tracking
+// ---------------------------------------------------------------------------
+
+function measurement(overrides = {}) {
+  return { id: 'm1', metricId: 'bodyweight', date: '2026-01-01', value: 80, ...overrides };
+}
+
+describe('metric catalogue', () => {
+  it('has unique metric ids', () => {
+    const ids = METRICS.map((m) => m.id);
+    assert.equal(new Set(ids).size, ids.length);
+  });
+
+  it('offers every metric under at least one goal', () => {
+    for (const metric of METRICS) {
+      assert.ok(metric.goals.length > 0, `${metric.id} has no goals`);
+    }
+  });
+
+  it('indexes metrics by id', () => {
+    assert.equal(METRIC_BY_ID.bodyweight.label, 'Bodyweight');
+  });
+
+  it('returns metrics matching a goal, in catalogue order', () => {
+    const forFat = metricsForGoals(['lose_fat']);
+    assert.ok(forFat.some((m) => m.id === 'bodyweight'));
+    assert.ok(forFat.some((m) => m.id === 'waist'));
+    // A strength lift belongs to build_muscle, not fat loss.
+    assert.ok(!forFat.some((m) => m.id === 'squat_top_set'));
+  });
+
+  it('never uses a scale metric with a unit, or drops a unit from a number metric', () => {
+    for (const metric of METRICS) {
+      if (metric.kind === 'scale') assert.equal(metric.unit, '');
+    }
+  });
+});
+
+describe('progress summaries', () => {
+  it('sorts readings oldest-to-newest regardless of input order', () => {
+    const [summary] = summariseMeasurements([
+      measurement({ id: 'b', date: '2026-02-01', value: 78 }),
+      measurement({ id: 'a', date: '2026-01-01', value: 80 }),
+    ]);
+    assert.deepEqual(
+      summary.points.map((p) => p.date),
+      ['2026-01-01', '2026-02-01'],
+    );
+    assert.equal(summary.first, 80);
+    assert.equal(summary.latest, 78);
+  });
+
+  it('reports change and percentage change between first and latest', () => {
+    const [summary] = summariseMeasurements([
+      measurement({ id: 'a', date: '2026-01-01', value: 80 }),
+      measurement({ id: 'b', date: '2026-02-01', value: 76 }),
+    ]);
+    assert.equal(summary.change, -4);
+    assert.equal(summary.changePct, -5);
+  });
+
+  it('withholds change until there are two readings', () => {
+    const [summary] = summariseMeasurements([measurement()]);
+    assert.equal(summary.count, 1);
+    assert.equal(summary.change, null);
+    assert.equal(summary.changePct, null);
+  });
+
+  it('does not divide by a zero first reading', () => {
+    const [summary] = summariseMeasurements([
+      measurement({ id: 'a', metricId: 'skin_clarity', date: '2026-01-01', value: 0 }),
+      measurement({ id: 'b', metricId: 'skin_clarity', date: '2026-02-01', value: 3 }),
+    ]);
+    assert.equal(summary.change, 3);
+    assert.equal(summary.changePct, null);
+  });
+
+  it('keeps distinct metrics in separate series', () => {
+    const summaries = summariseMeasurements([
+      measurement({ id: 'a', metricId: 'bodyweight' }),
+      measurement({ id: 'b', metricId: 'waist', value: 84 }),
+    ]);
+    assert.equal(summaries.length, 2);
+  });
+
+  it('keeps two differently-named custom measures apart but collects one', () => {
+    assert.equal(
+      seriesKey(measurement({ metricId: CUSTOM_METRIC_ID, customLabel: 'Mood' })),
+      seriesKey(measurement({ metricId: CUSTOM_METRIC_ID, customLabel: 'mood' })),
+    );
+    const summaries = summariseMeasurements([
+      measurement({ id: 'a', metricId: CUSTOM_METRIC_ID, customLabel: 'Mood', customUnit: '', value: 3 }),
+      measurement({ id: 'b', metricId: CUSTOM_METRIC_ID, customLabel: 'Mood', customUnit: '', value: 4 }),
+      measurement({ id: 'c', metricId: CUSTOM_METRIC_ID, customLabel: 'Energy', customUnit: '', value: 2 }),
+    ]);
+    assert.equal(summaries.length, 2);
+    const mood = summaries.find((s) => s.label === 'Mood');
+    assert.equal(mood.count, 2);
   });
 });

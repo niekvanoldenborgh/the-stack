@@ -69,11 +69,21 @@ export async function requestPermission(): Promise<PermissionState> {
   return result.canAskAgain ? 'undetermined' : 'denied';
 }
 
-function triggerDate(dose: ScheduledDose): Date {
+function triggerDate(dose: ScheduledDose, offsetMin = 0): Date {
   const date = fromISODate(dose.date);
   const [hours, minutes] = dose.time.split(':').map(Number);
   date.setHours(hours ?? 8, minutes ?? 0, 0, 0);
+  if (offsetMin > 0) date.setMinutes(date.getMinutes() - offsetMin);
   return date;
+}
+
+/** Sanitise user-configured alarm offsets: non-negative, whole minutes, unique. */
+function normaliseOffsets(offsetsMin: number[]): number[] {
+  const cleaned = offsetsMin
+    .map((m) => Math.max(0, Math.round(m)))
+    .filter((m, index, arr) => arr.indexOf(m) === index)
+    .sort((a, b) => b - a);
+  return cleaned.length > 0 ? cleaned : [0];
 }
 
 function buildBody(dose: ScheduledDose): string {
@@ -105,8 +115,16 @@ export interface ScheduleResult {
 /**
  * Replaces all pending reminders with the next window of upcoming doses.
  * Safe to call repeatedly — it cancels before it schedules.
+ *
+ * `alarmOffsetsMin` fans each dose out into one alert per configured lead time
+ * (e.g. `[2, 0]` → two minutes before and at the inject time). The platform
+ * notification ceiling is enforced *after* the fan-out, so adding offsets
+ * shortens the covered window rather than ever exceeding the cap.
  */
-export async function syncReminders(doses: ScheduledDose[]): Promise<ScheduleResult> {
+export async function syncReminders(
+  doses: ScheduledDose[],
+  alarmOffsetsMin: number[] = [0],
+): Promise<ScheduleResult> {
   if (Platform.OS === 'web') return { scheduled: 0, skippedPast: 0, truncated: false };
 
   const permission = await getPermissionState();
@@ -116,21 +134,24 @@ export async function syncReminders(doses: ScheduledDose[]): Promise<ScheduleRes
   await ensureAndroidChannel();
 
   const now = Date.now();
+  const offsets = normaliseOffsets(alarmOffsetsMin);
   const upcoming = doses
-    .map((dose) => ({ dose, when: triggerDate(dose) }))
+    .flatMap((dose) =>
+      offsets.map((offsetMin) => ({ dose, offsetMin, when: triggerDate(dose, offsetMin) })),
+    )
     .filter((entry) => entry.when.getTime() > now + 60_000)
     .sort((a, b) => a.when.getTime() - b.when.getTime());
 
-  const skippedPast = doses.length - upcoming.length;
+  const skippedPast = doses.length * offsets.length - upcoming.length;
   const window = upcoming.slice(0, MAX_SCHEDULED);
 
-  for (const { dose, when } of window) {
+  for (const { dose, offsetMin, when } of window) {
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Dose due',
+        title: offsetMin > 0 ? `Dose in ${offsetMin} min` : 'Dose due',
         body: buildBody(dose),
         sound: 'default',
-        data: { scheduledDoseId: dose.id, peptideId: dose.peptideId },
+        data: { scheduledDoseId: dose.id, peptideId: dose.peptideId, offsetMin },
         ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
       },
       trigger: {
