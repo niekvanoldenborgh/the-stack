@@ -383,7 +383,9 @@ export function reconstitute(
 
   return {
     mcgPerUnit: Math.round(mcgPerUnit * 100) / 100,
-    unitsForDose: Math.round(unitsForDose * 10) / 10,
+    // Round down, not to nearest: the displayed volume must never imply more
+    // drug than was entered (§3.4). The shortfall is at most 0.05 units.
+    unitsForDose: Math.floor(unitsForDose * 10) / 10,
     warning,
   };
 }

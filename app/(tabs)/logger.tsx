@@ -117,6 +117,16 @@ function InjectionLogger() {
   const drawnNum = parseNumber(drawn);
   const canSave = Boolean(peptideId) && doseNum > 0 && site !== null;
 
+  // Warn, never block, when the entered dose exceeds the compound's published
+  // maximum — the user already injected, so the log must stay true (AGENTS.md
+  // invariant 6: only critical findings block, and this isn't a save gate).
+  // Only compare when units match: converting mg/mcg here to "check" would be
+  // exactly the implicit conversion invariant 8 rules out.
+  const overMax =
+    selectedPeptide && doseNum > 0 && doseUnit === selectedPeptide.dosing.unit
+      ? doseNum > selectedPeptide.dosing.hardMax
+      : false;
+
   const pickPeptide = (id: string) => {
     setPeptideId(id);
     setSearch('');
@@ -217,6 +227,16 @@ function InjectionLogger() {
           })}
         </Row>
       </Row>
+      {overMax && selectedPeptide ? (
+        <>
+          <Spacer size={spacing.sm} />
+          <Callout tone="moderate">
+            {`Above the published maximum for ${selectedPeptide.name}: ${selectedPeptide.dosing.hardMax} ${
+              selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
+            } (${selectedPeptide.sources[0] ?? 'compound reference'}). This is logged as entered — nothing here is blocked or corrected.`}
+          </Callout>
+        </>
+      ) : null}
       <Spacer size={spacing.sm} />
       <Caption color={colors.textFaint}>Amount drawn (syringe units, optional)</Caption>
       <Spacer size={spacing.xs} />
