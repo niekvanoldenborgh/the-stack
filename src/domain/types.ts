@@ -288,7 +288,61 @@ export interface Peptide {
   sources: string[];
   /** Myths worth correcting on the detail page. */
   notes?: string[];
+  /**
+   * Parameters for the estimated-medication-levels PK model
+   * (docs/pk-estimated-levels-spec.md). Presence of this field is what makes a
+   * compound Tier 1 eligible for a "levels" curve on the Summary screen; its
+   * absence is deliberately the "no model available" state (§4) — a new
+   * compound is safe by default. Every field here is traced to a cited
+   * parameter in the spec; nothing here is fitted or invented.
+   */
+  pk?: PkModel;
 }
+
+/**
+ * One-compartment, first-order absorption + elimination — semaglutide (§1.1).
+ * Parameters are apparent (`CL/F`, `V/F`); the dose is used as administered,
+ * with no separate bioavailability factor (D3 in the spec — applying one on
+ * top would double-count it).
+ */
+export interface OneCompartmentPk {
+  kind: 'one_compartment_first_order';
+  /** h⁻¹, absorption rate constant. */
+  ka: number;
+  /** L/h, apparent clearance at `refWeightKg`. */
+  clRef: number;
+  /** L, apparent volume of distribution — no weight covariate per the source paper. */
+  vd: number;
+  refWeightKg: number;
+  /** Allometric exponent applied to clearance only. */
+  weightExponent: number;
+}
+
+/**
+ * Two-compartment, first-order absorption + elimination — tirzepatide (§1.2).
+ * Parameters are true (not apparent); `f` must be applied explicitly (D3).
+ */
+export interface TwoCompartmentPk {
+  kind: 'two_compartment_first_order';
+  ka: number;
+  /** Absolute bioavailability, fixed. */
+  f: number;
+  /** L/h per `refWeightKg`. */
+  clRef: number;
+  /** L/h per `refWeightKg`, intercompartmental clearance. */
+  qRef: number;
+  /** L per `refWeightKg`, central volume. */
+  vcRef: number;
+  /** L per `refWeightKg`, peripheral volume. */
+  vpRef: number;
+  refWeightKg: number;
+  /** Allometric exponent for CL and Q. */
+  clExponent: number;
+  /** Allometric exponent for Vc and Vp (1.0 = linear scaling). */
+  volExponent: number;
+}
+
+export type PkModel = OneCompartmentPk | TwoCompartmentPk;
 
 // ---------------------------------------------------------------------------
 // Interactions

@@ -55,7 +55,19 @@ interface Settings {
    */
   alarmOffsetsMin: number[];
   notifications: NotificationPurposes;
+  /**
+   * Order of the Summary screen's sections, id first = shown first. The
+   * Summary screen renders whatever ids it doesn't recognise nowhere, so
+   * adding a new section is safe without a migration — it just needs adding
+   * to `DEFAULT_SUMMARY_ORDER` to appear for new profiles.
+   */
+  summaryOrder: string[];
+  /** ISO timestamp the user acknowledged the PK "before you read this chart" modal. Unset = not yet shown. */
+  pkModalAcknowledgedAt?: string;
 }
+
+/** THEA-8 Summary screen — see `SUMMARY_SECTIONS` in app/(tabs)/index.tsx. */
+export const DEFAULT_SUMMARY_ORDER = ['overview', 'next_injection', 'levels', 'stack'];
 
 interface AppState {
   hydrated: boolean;
@@ -127,6 +139,7 @@ const DEFAULT_SETTINGS: Settings = {
     cycleTransitions: true,
     sideEffectCheckins: false,
   },
+  summaryOrder: DEFAULT_SUMMARY_ORDER,
 };
 
 export const useAppStore = create<AppState>()(
@@ -318,7 +331,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'the-stack-v1',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => AsyncStorage),
       /**
        * v1 profiles predate the risk dial and current-use tracking. Default to
@@ -329,6 +342,9 @@ export const useAppStore = create<AppState>()(
        * notification toggles. Merge over DEFAULT_SETTINGS so a partial persisted
        * `settings` from v2 (only `remindersEnabled`/`customTimes`) gains the new
        * fields rather than leaving the settings screens rendering undefined.
+       *
+       * v3→v4 (THEA-8) adds `summaryOrder`. Same merge-over-DEFAULT_SETTINGS
+       * approach — `pkModalAcknowledgedAt` is optional so it needs no branch.
        */
       migrate: (persisted, version) => {
         const state = persisted as { profile?: UserProfile | null; settings?: Partial<Settings> } | null;
@@ -345,6 +361,9 @@ export const useAppStore = create<AppState>()(
             ...(state.settings ?? {}),
             notifications: { ...DEFAULT_SETTINGS.notifications, ...(state.settings?.notifications ?? {}) },
           };
+        }
+        if (version < 4 && state) {
+          state.settings = { ...DEFAULT_SETTINGS, ...(state.settings ?? {}) };
         }
         return state as never;
       },

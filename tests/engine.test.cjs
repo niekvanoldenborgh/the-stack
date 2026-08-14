@@ -3,8 +3,21 @@
 const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const { PEPTIDES, getPeptide } = require('../.test-build/domain/peptides');
 const { computeDose, concentration, doseForWeek, reconstitute, roundDose } = require('../.test-build/engine/dosing');
+const {
+  buildLevelSeries,
+  doseToMg,
+  dosingIntervalHours,
+  peptideHasLevelModel,
+  singleDoseConcentrationMgPerL,
+  steadyStateAverageMgPerL,
+  terminalHalfLifeHours,
+  twoCompartmentCoefficients,
+} = require('../.test-build/engine/pk');
 const { SIDE_EFFECT_OPTIONS } = require('../.test-build/domain/sideEffects');
 const {
   aggregateSideEffects,
@@ -1130,5 +1143,194 @@ describe('progress summaries', () => {
     assert.equal(summaries.length, 2);
     const mood = summaries.find((s) => s.label === 'Mood');
     assert.equal(mood.count, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Estimated medication levels (PK) — THEA-6 / docs/pk-estimated-levels-spec.md §5
+// ---------------------------------------------------------------------------
+
+function injection(overrides = {}) {
+  return {
+    id: 'inj_test',
+    date: '2026-01-01',
+    time: '08:00',
+    peptideId: 'semaglutide',
+    dose: { value: 1, unit: 'mg' },
+    site: 'abdomen_left',
+    painLevel: 0,
+    ...overrides,
+  };
+}
+
+/** Mirrors pk.ts's own date+time → epoch-hours conversion, for building `now`. */
+function epochHoursOf(date, time) {
+  const [y, m, d] = date.split('-').map(Number);
+  const [h, min] = time.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min).getTime() / 3_600_000;
+}
+
+describe('estimated medication levels (PK)', () => {
+  it('T1 — every pk-modelled peptide is not withheld and doses in mg/mcg', () => {
+    for (const peptide of PEPTIDES) {
+      if (!peptide.pk) continue;
+      assert.equal(peptide.doseGuidanceWithheld, undefined, `${peptide.id}: withheld compound must not carry a pk model`);
+      assert.ok(['mg', 'mcg'].includes(peptide.dosing.unit), `${peptide.id}: pk model on a non-mass dosing unit`);
+      assert.equal(peptideHasLevelModel(peptide), true);
+    }
+  });
+
+  it('T2 — exactly semaglutide and tirzepatide have a pk model', () => {
+    const withPk = PEPTIDES.filter((p) => p.pk).map((p) => p.id).sort();
+    assert.deepEqual(withPk, ['semaglutide', 'tirzepatide']);
+  });
+
+  it('T3 — semaglutide reproduces the §1.1 implementation self-check at the 85 kg reference', () => {
+    const peptide = getPeptide('semaglutide');
+    const weightKg = 85; // the reference weight — CL is unscaled here
+
+    // The self-check table (§1.1) is the ground truth for a correct
+    // transcription of the equations; the label's rounded "approximately 1
+    // week" is deliberately looser (spec §6, CAL-3 notes a similar rounding
+    // gap for tmax) so it is checked only as a sanity band, not to 5%.
+    const halfLife = terminalHalfLifeHours(peptide.pk, weightKg);
+    assert.ok(Math.abs(halfLife - 176.9) / 176.9 < 0.01, `half-life ${halfLife}`);
+    assert.ok(halfLife > 140 && halfLife < 200, `half-life ${halfLife} not "approximately a week"`);
+
+    const cavgSs1mg = steadyStateAverageMgPerL(peptide.pk, 1.0, 168, weightKg);
+    assert.ok(Math.abs(cavgSs1mg - 0.1245) / 0.1245 < 0.01, `Cavg,ss ${cavgSs1mg}`);
+
+    const aucTau2mg = steadyStateAverageMgPerL(peptide.pk, 2.0, 168, weightKg) * 168;
+    const SEMAGLUTIDE_MW = 4113.58; // Ozempic/Wegovy USPI §11
+    const aucNmol = (aucTau2mg / SEMAGLUTIDE_MW) * 1e6;
+    // Published steady-state AUCτ for once-weekly 2.0 mg is ≈9,825 nmol·h/L;
+    // spec §1.1 documents the model as running ~3.5% high against it.
+    assert.ok(Math.abs(aucNmol - 9825) / 9825 < 0.05, `AUC ${aucNmol} nmol·h/L`);
+
+    const ke = Math.log(2) / halfLife;
+    const accumulationRatio = 1 / (1 - Math.exp(-ke * 168));
+    assert.ok(accumulationRatio >= 2.0 && accumulationRatio <= 2.2, `accumulation ratio ${accumulationRatio}`);
+  });
+
+  it('T4 — tirzepatide reproduces the §1.2 implementation self-check at the 70 kg reference', () => {
+    const peptide = getPeptide('tirzepatide');
+    const weightKg = 70;
+
+    const coeffs = twoCompartmentCoefficients(peptide.pk, 5, weightKg);
+    assert.ok(Math.abs(coeffs.A + coeffs.B + coeffs.K) < 1e-6, `A+B+K = ${coeffs.A + coeffs.B + coeffs.K}`);
+    assert.ok(Math.abs(coeffs.A - -0.7689) < 0.002, `A ${coeffs.A}`);
+    assert.ok(Math.abs(coeffs.B - 0.576) < 0.002, `B ${coeffs.B}`);
+    assert.ok(Math.abs(coeffs.K - 0.1928) < 0.002, `K ${coeffs.K}`);
+
+    const halfLifeDays = terminalHalfLifeHours(peptide.pk, weightKg) / 24;
+    assert.ok(halfLifeDays >= 5 && halfLifeDays <= 7, `terminal half-life ${halfLifeDays} days`);
+
+    const cavgSs = steadyStateAverageMgPerL(peptide.pk, 5, 168, weightKg);
+    assert.ok(Math.abs(cavgSs - 0.724) / 0.724 < 0.01, `Cavg,ss ${cavgSs}`);
+    // Reproduces F·D/(CL·τ) directly — guards against a stray extra F application (D3).
+    assert.ok(Math.abs(cavgSs - (0.8 * 5) / (0.0329 * 168)) < 1e-9);
+  });
+
+  it('T5 — carries no risk-dial input at all (AGENTS.md invariant 2 / D4)', () => {
+    // buildLevelSeries's inputs are (peptide, injectionLogs, weightKg,
+    // nowEpochHours) — nothing resembling a risk tolerance. Pinning the arity
+    // catches a future change that threads the dial in as a silent 5th input.
+    assert.equal(buildLevelSeries.length, 4);
+  });
+
+  it('T6 — an empty injection log yields an empty curve, never a schedule projection', () => {
+    const peptide = getPeptide('semaglutide');
+    const result = buildLevelSeries(peptide, [], 80, epochHoursOf('2026-01-08', '08:00'));
+    assert.equal(result.eligible, true);
+    assert.deepEqual(result.points, []);
+    assert.equal(result.cavgSsMgPerL, null);
+  });
+
+  it('T7 — falls back to the reference weight outside the 40–200 kg domain', () => {
+    const peptide = getPeptide('semaglutide');
+    const logs = [injection({ date: '2026-01-01', time: '08:00' })];
+    const now = epochHoursOf('2026-01-08', '08:00');
+
+    const tooHeavy = buildLevelSeries(peptide, logs, 260, now);
+    assert.equal(tooHeavy.weightFallback, true);
+    assert.equal(tooHeavy.weightKgUsed, 85);
+
+    const missing = buildLevelSeries(peptide, logs, undefined, now);
+    assert.equal(missing.weightFallback, true);
+    assert.equal(missing.weightKgUsed, 85);
+
+    const normal = buildLevelSeries(peptide, logs, 90, now);
+    assert.equal(normal.weightFallback, false);
+    assert.equal(normal.weightKgUsed, 90);
+  });
+
+  it('T8 — a doseGuidanceWithheld compound never produces a curve, even carrying a pk model', () => {
+    const fakePeptide = {
+      id: 'fake-withheld',
+      dosing: { unit: 'mg' },
+      doseGuidanceWithheld: { reason: 'test fixture' },
+      pk: getPeptide('semaglutide').pk,
+      frequency: { daysPerWeek: 1, timesPerDay: 1 },
+    };
+    assert.equal(peptideHasLevelModel(fakePeptide), false);
+    const result = buildLevelSeries(
+      fakePeptide,
+      [injection({ peptideId: 'fake-withheld' })],
+      80,
+      epochHoursOf('2026-01-08', '08:00'),
+    );
+    assert.equal(result.eligible, false);
+    assert.deepEqual(result.points, []);
+  });
+
+  it('T8 — an iu/pct dosed compound never produces a curve (E4)', () => {
+    const fakePeptide = {
+      id: 'fake-iu',
+      dosing: { unit: 'iu' },
+      pk: getPeptide('semaglutide').pk,
+      frequency: { daysPerWeek: 1, timesPerDay: 1 },
+    };
+    assert.equal(peptideHasLevelModel(fakePeptide), false);
+  });
+
+  it('T10 — stays free of any import from the advisory dosing/recommend modules', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'engine', 'pk.ts'), 'utf8');
+    assert.ok(!/from ['"]\.\/dosing['"]/.test(source), 'pk.ts must not import ./dosing');
+    assert.ok(!/from ['"]\.\/recommend['"]/.test(source), 'pk.ts must not import ./recommend');
+  });
+
+  it('converts dose units at the boundary only, and never guesses iu/pct', () => {
+    assert.equal(doseToMg({ value: 2, unit: 'mg' }), 2);
+    assert.equal(doseToMg({ value: 500, unit: 'mcg' }), 0.5);
+    assert.equal(doseToMg({ value: 1, unit: 'iu' }), null);
+    assert.equal(doseToMg({ value: 1, unit: 'pct' }), null);
+  });
+
+  it("derives the dosing interval from the compound's own published frequency, not an invented number", () => {
+    assert.equal(dosingIntervalHours(getPeptide('semaglutide')), 168);
+    assert.equal(dosingIntervalHours(getPeptide('tirzepatide')), 168);
+  });
+
+  it('builds a superposed curve from logged injections (D1) with the ×/÷1.25 band on every point (U3)', () => {
+    const peptide = getPeptide('semaglutide');
+    const logs = [
+      injection({ id: 'a', date: '2026-01-01', time: '08:00', dose: { value: 1, unit: 'mg' } }),
+      injection({ id: 'b', date: '2026-01-08', time: '08:00', dose: { value: 1, unit: 'mg' } }),
+    ];
+    const now = epochHoursOf('2026-01-15', '08:00');
+    const result = buildLevelSeries(peptide, logs, 85, now);
+    assert.equal(result.eligible, true);
+    assert.ok(result.points.length > 0);
+    assert.ok(result.cavgSsMgPerL > 0);
+    for (const point of result.points) {
+      assert.ok(Math.abs(point.pctLow - point.pct / 1.25) < 1e-9);
+      assert.ok(Math.abs(point.pctHigh - point.pct * 1.25) < 1e-9);
+      assert.ok(point.pctLow <= point.pct && point.pct <= point.pctHigh);
+    }
+  });
+
+  it('a single-dose concentration is zero before the dose is given', () => {
+    const peptide = getPeptide('tirzepatide');
+    assert.equal(singleDoseConcentrationMgPerL(peptide.pk, 5, -1, 70), 0);
   });
 });

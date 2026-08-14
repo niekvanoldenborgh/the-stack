@@ -96,6 +96,17 @@ export const METABOLIC_PEPTIDES: Peptide[] = [
       'Compounded and grey-market "semaglutide" is a recurring source of dosing errors — several poisoning clusters have come from users measuring units on an insulin syringe instead of milligrams.',
       'Muscle loss is the main avoidable harm. Resistance training plus high protein is not optional on this drug.',
     ],
+    // THEA-6 §1.1. ka fixed from clinical-pharmacology data; CL/F and V/F are
+    // popPK estimates at the 85 kg reference; weight exponent is derived from
+    // the paper's reported exposure differences (MED-SIGNOFF-2, accepted).
+    pk: {
+      kind: 'one_compartment_first_order',
+      ka: 0.0286,
+      clRef: 0.0478,
+      vd: 12.2,
+      refWeightKg: 85,
+      weightExponent: 0.78,
+    },
   },
 
   {
@@ -173,6 +184,21 @@ export const METABOLIC_PEPTIDES: Peptide[] = [
       'SURMOUNT-1 through SURMOUNT-4 trials (NEJM, 2022–2024)',
       'SURPASS head-to-head programme versus semaglutide',
     ],
+    // THEA-6 §1.2. True (not apparent) parameters at the 70 kg reference — `f`
+    // must be applied explicitly. Fat-mass-fraction covariate on Vd is omitted
+    // per MED-SIGNOFF-3 (accepted: omit and disclose).
+    pk: {
+      kind: 'two_compartment_first_order',
+      ka: 0.0373,
+      f: 0.8,
+      clRef: 0.0329,
+      qRef: 0.126,
+      vcRef: 2.47,
+      vpRef: 3.98,
+      refWeightKg: 70,
+      clExponent: 0.8,
+      volExponent: 1.0,
+    },
   },
 
   {

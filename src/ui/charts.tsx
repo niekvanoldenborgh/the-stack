@@ -324,6 +324,87 @@ export function Sparkbars({
   );
 }
 
+/**
+ * A continuous curve with an uncertainty band, for the "estimated medication
+ * levels" chart (THEA-6). Built the same way as the rest of this file — no SVG,
+ * just Views — as a run of adjacent thin columns rather than bars: the band is
+ * a lighter fill from `low` to `high`, and the central estimate is a slim
+ * marker layered on top. Zero gap between columns (unlike VBars) is
+ * deliberate: this is one continuous quantity, not discrete measurements, and
+ * a gap would misread as missing data.
+ *
+ * Never rendered without a band (AGENTS.md / THEA-6 §2.2 U3) — a bare line
+ * would imply a measurement this chart is not.
+ */
+export interface LevelCurvePoint {
+  value: number;
+  low: number;
+  high: number;
+}
+
+export function LevelCurve({
+  points,
+  height = 120,
+  tint = colors.accent,
+  formatValue = (v) => `${Math.round(v)}%`,
+  accessibilityLabel,
+}: {
+  points: LevelCurvePoint[];
+  height?: number;
+  tint?: string;
+  formatValue?: (value: number) => string;
+  accessibilityLabel?: string;
+}) {
+  if (points.length === 0) return null;
+  const max = Math.max(...points.map((p) => p.high), 1);
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={
+        accessibilityLabel ?? `Estimated level, ${points.length} points, peak ${formatValue(Math.max(...points.map((p) => p.value)))}`
+      }
+      style={{ height, flexDirection: 'row', alignItems: 'flex-end' }}
+    >
+      {points.map((point, index) => {
+        const bandBottom = (Math.max(point.low, 0) / max) * height;
+        const bandTop = (point.high / max) * height;
+        const lineBottom = (point.value / max) * height;
+        return (
+          <View key={index} style={{ flex: 1, height, justifyContent: 'flex-end' }}>
+            {/* Uncertainty band — always present, never a bare line (U3). */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: bandBottom,
+                height: Math.max(bandTop - bandBottom, 1),
+                backgroundColor: tint,
+                opacity: 0.16,
+              }}
+            />
+            {/* Central estimate. */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: Math.max(lineBottom - 1, 0),
+                height: 2,
+                backgroundColor: tint,
+                opacity: 0.9,
+              }}
+            />
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 /** Legend row. Present whenever a chart carries two or more series. */
 export function Legend({ items }: { items: Array<{ label: string; color: string }> }) {
   return (
