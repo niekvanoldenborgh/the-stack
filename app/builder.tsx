@@ -68,7 +68,7 @@ export default function BuilderScreen() {
       };
     });
     createCustomStack(name, items);
-    router.replace('/(tabs)/stack');
+    router.replace('/(tabs)');
   };
 
   if (!profile) {

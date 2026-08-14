@@ -26,41 +26,41 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Today',
+          title: 'Summary',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="today-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="stack"
+        name="logger"
         options={{
-          title: 'Stack',
+          title: 'Logger',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="layers-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="library"
+        name="results"
         options={{
-          title: 'Library',
+          title: 'Results',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="book-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="trending-up-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="train"
+        name="calendar"
         options={{
-          title: 'Train',
+          title: 'Calendar',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="barbell-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="me"
+        name="settings"
         options={{
-          title: 'Me',
+          title: 'Settings',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} />,
         }}
       />
     </Tabs>
