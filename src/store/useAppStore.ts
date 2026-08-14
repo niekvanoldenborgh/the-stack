@@ -17,7 +17,7 @@ import type {
 } from '../domain/types';
 import { generateSchedule } from '../engine/cycle';
 import { generateStack } from '../engine/recommend';
-import { evaluateStack } from '../engine/safety';
+import { evaluateStack, reevaluateStacks } from '../engine/safety';
 import { generateProgram } from '../engine/workout';
 import { addDays, today } from '../lib/date';
 
@@ -165,16 +165,7 @@ export const useAppStore = create<AppState>()(
         const current = get().profile;
         if (!current) return;
         const profile = { ...current, ...patch };
-        set({
-          profile,
-          stacks: get().stacks.map((stack) => ({
-            ...stack,
-            safety: evaluateStack(
-              stack.items.map((i) => i.peptideId),
-              profile,
-            ),
-          })),
-        });
+        set({ profile, stacks: reevaluateStacks(get().stacks, profile) });
       },
 
       createGeneratedStack: () => {

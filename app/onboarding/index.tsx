@@ -14,7 +14,10 @@ import type {
   TrainingDaysPerWeek,
   UserProfile,
 } from '../../src/domain/types';
+import { generateSchedule } from '../../src/engine/cycle';
 import { findGoalConflicts } from '../../src/engine/safety';
+import { addDays, today } from '../../src/lib/date';
+import { syncReminders } from '../../src/lib/notifications';
 import { useAppStore } from '../../src/store/useAppStore';
 import {
   Badge,
@@ -62,33 +65,45 @@ const EXPERIENCE_OPTIONS: Array<{ id: Experience; label: string; hint: string }>
 export default function Onboarding() {
   const router = useRouter();
   const saveProfile = useAppStore((s) => s.saveProfile);
+  const updateProfile = useAppStore((s) => s.updateProfile);
+
+  // Re-entry (Lock app -> onboarding) must prefill from the existing profile,
+  // not hardcoded defaults — otherwise walking back through this flow silently
+  // blanks health history the user already declared. Read once, imperatively:
+  // this screen owns the form state from here, and the merge on submit (see
+  // `finish`) is what actually persists it. See THEA-12a F1.
+  const [existingProfile] = useState(() => useAppStore.getState().profile);
 
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex]!;
 
+  // Re-acceptance is always required, even on re-entry — that is the entire
+  // point of locking the app.
   const [accepted, setAccepted] = useState(false);
   const [acknowledgedNotMedical, setAcknowledgedNotMedical] = useState(false);
   const [acknowledgedSourcing, setAcknowledgedSourcing] = useState(false);
 
-  const [age, setAge] = useState(28);
-  const [sex, setSex] = useState<Sex>('male');
-  const [weightKg, setWeightKg] = useState(80);
-  const [heightCm, setHeightCm] = useState(178);
+  const [age, setAge] = useState(existingProfile?.age ?? 28);
+  const [sex, setSex] = useState<Sex>(existingProfile?.sex ?? 'male');
+  const [weightKg, setWeightKg] = useState(existingProfile?.weightKg ?? 80);
+  const [heightCm, setHeightCm] = useState(existingProfile?.heightCm ?? 178);
 
-  const [activity, setActivity] = useState<ActivityLevel>('moderate');
-  const [sleepHours, setSleepHours] = useState(7);
-  const [sleepQuality, setSleepQuality] = useState(3);
-  const [trainingDays, setTrainingDays] = useState<TrainingDaysPerWeek>(4);
-  const [experience, setExperience] = useState<Experience>('none');
+  const [activity, setActivity] = useState<ActivityLevel>(existingProfile?.activity ?? 'moderate');
+  const [sleepHours, setSleepHours] = useState(existingProfile?.sleepHours ?? 7);
+  const [sleepQuality, setSleepQuality] = useState(existingProfile?.sleepQuality ?? 3);
+  const [trainingDays, setTrainingDays] = useState<TrainingDaysPerWeek>(existingProfile?.trainingDays ?? 4);
+  const [experience, setExperience] = useState<Experience>(existingProfile?.experience ?? 'none');
 
-  const [goals, setGoals] = useState<GoalId[]>([]);
-  const [healthFlags, setHealthFlags] = useState<HealthFlag[]>([]);
+  const [goals, setGoals] = useState<GoalId[]>(existingProfile?.goals ?? []);
+  const [healthFlags, setHealthFlags] = useState<HealthFlag[]>(existingProfile?.healthFlags ?? []);
 
-  const [usingNow, setUsingNow] = useState<boolean | null>(null);
-  const [currentPeptides, setCurrentPeptides] = useState<string[]>([]);
+  const [usingNow, setUsingNow] = useState<boolean | null>(
+    existingProfile ? existingProfile.currentPeptides.length > 0 : null,
+  );
+  const [currentPeptides, setCurrentPeptides] = useState<string[]>(existingProfile?.currentPeptides ?? []);
   const [currentQuery, setCurrentQuery] = useState('');
 
-  const [riskTolerance, setRiskTolerance] = useState<RiskTolerance>(3);
+  const [riskTolerance, setRiskTolerance] = useState<RiskTolerance>(existingProfile?.riskTolerance ?? 3);
 
   const conflicts = useMemo(() => findGoalConflicts(goals), [goals]);
   const currentResults = useMemo(
@@ -130,8 +145,7 @@ export default function Onboarding() {
   };
 
   const finish = () => {
-    const profile: UserProfile = {
-      createdAt: new Date().toISOString(),
+    const patch = {
       age,
       sex,
       weightKg,
@@ -147,9 +161,29 @@ export default function Onboarding() {
       riskTolerance,
       acceptedDisclaimerAt: new Date().toISOString(),
     };
+
+    if (existingProfile) {
+      // Re-entry: merge, not replace. `updateProfile` re-runs the safety
+      // engine over every saved stack — a plain `saveProfile` here is exactly
+      // the THEA-12a F1 bug (blank health history + a stale "all clear").
+      updateProfile(patch);
+
+      // Reminders were cancelled on lock; re-sync them now the app is
+      // unlocked again rather than leaving the user's alarms silently off.
+      const state = useAppStore.getState();
+      const stack = state.stacks.find((s) => s.id === state.activeStackId);
+      if (stack && state.settings.remindersEnabled) {
+        const doses = generateSchedule(stack, today(), addDays(today(), 14));
+        void syncReminders(doses, state.settings.alarmOffsetsMin);
+      }
+    } else {
+      // First run only: there is no profile and nothing to merge into.
+      const profile: UserProfile = { ...patch, createdAt: new Date().toISOString() };
+      saveProfile(profile);
+    }
+
     // The stack itself is generated on the recommendation screen, so the risk
     // dial there can re-derive it live before the user commits to anything.
-    saveProfile(profile);
     router.replace('/recommendation');
   };
 

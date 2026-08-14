@@ -13,6 +13,7 @@ import type {
   SafetyNotice,
   SafetyReport,
   SideEffect,
+  Stack,
   UserProfile,
 } from '../domain/types';
 
@@ -396,6 +397,25 @@ export function evaluateStack(peptideIds: string[], profile: UserProfile): Safet
     blocking,
     riskScore: computeRiskScore(peptides, [...interactions, ...interactionsWithCurrent], contraindications),
   };
+}
+
+/**
+ * Recompute every saved stack's safety report against an updated profile.
+ *
+ * A stack's `safety` field is a snapshot taken when it was built. Any edit to
+ * health history — including a full re-onboard — must go through this rather
+ * than a plain profile replace, or a stack keeps displaying an "all clear"
+ * computed against a user the engine no longer believes exists. See
+ * AGENTS.md and docs/thea-12a-data-compliance-review.md F1.
+ */
+export function reevaluateStacks(stacks: Stack[], profile: UserProfile): Stack[] {
+  return stacks.map((stack) => ({
+    ...stack,
+    safety: evaluateStack(
+      stack.items.map((item) => item.peptideId),
+      profile,
+    ),
+  }));
 }
 
 /**

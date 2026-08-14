@@ -26,6 +26,7 @@ const {
   findContraindications,
   findInteractions,
   isPeptideAllowed,
+  reevaluateStacks,
 } = require('../.test-build/engine/safety');
 const { explainExclusions, generateStack } = require('../.test-build/engine/recommend');
 const { generateSchedule, phaseOn, spreadDays } = require('../.test-build/engine/cycle');
@@ -422,6 +423,57 @@ describe('stack evaluation', () => {
   it('always warns when a research chemical is present', () => {
     const report = evaluateStack(['bpc-157'], makeProfile({ goals: ['injury_recovery'] }));
     assert.ok(report.notices.some((n) => n.id === 'research-chemicals'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reevaluateStacks (THEA-12a F1 — Lock app / re-onboard must not leave a
+// stale "all clear" on a stack after health history changes)
+// ---------------------------------------------------------------------------
+
+function makeStack(overrides = {}) {
+  return {
+    id: 'stack_1',
+    name: 'Test stack',
+    origin: 'generated',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    startDate: '2026-01-01',
+    items: [{ peptideId: 'semaglutide' }],
+    goals: ['lose_fat'],
+    safety: evaluateStack(['semaglutide'], makeProfile()),
+    ...overrides,
+  };
+}
+
+describe('reevaluateStacks', () => {
+  it('picks up a newly-declared contraindication on the saved stack', () => {
+    const clean = makeStack();
+    assert.equal(clean.safety.blocking, false);
+
+    const [reevaluated] = reevaluateStacks([clean], makeProfile({ healthFlags: ['men2'] }));
+    assert.equal(reevaluated.safety.blocking, true);
+  });
+
+  it('does not mutate the input stack (the caller still holds the stale snapshot)', () => {
+    const clean = makeStack();
+    reevaluateStacks([clean], makeProfile({ healthFlags: ['men2'] }));
+    assert.equal(clean.safety.blocking, false);
+  });
+
+  it('preserves everything about the stack except safety', () => {
+    const clean = makeStack();
+    const [reevaluated] = reevaluateStacks([clean], makeProfile());
+    assert.equal(reevaluated.id, clean.id);
+    assert.deepEqual(reevaluated.items, clean.items);
+    assert.deepEqual(reevaluated.goals, clean.goals);
+  });
+
+  it('clears a stale finding once the flag that caused it is gone again', () => {
+    const flagged = makeStack({ safety: evaluateStack(['semaglutide'], makeProfile({ healthFlags: ['men2'] })) });
+    assert.equal(flagged.safety.blocking, true);
+
+    const [reevaluated] = reevaluateStacks([flagged], makeProfile());
+    assert.equal(reevaluated.safety.blocking, false);
   });
 });
 

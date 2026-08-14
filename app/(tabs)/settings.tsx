@@ -5,17 +5,23 @@ import { Alert, Platform, View } from 'react-native';
 import { GOALS_BY_ID } from '../../src/domain/goals';
 import { useAppStore } from '../../src/store/useAppStore';
 import { formatLength, formatMass } from '../../src/lib/units';
+import { cancelAllReminders } from '../../src/lib/notifications';
 import { Caption, Display, ListRow, Screen, Small, Spacer } from '../../src/ui/components';
 import { colors, spacing } from '../../src/ui/theme';
 
 /**
  * Settings hub (THEA-4 page 5). Each row opens its own screen.
  *
- * The four data/account rows — Privacy, Manage Data, Log Out and Delete Account
- * — are handled with extra care: Log Out is non-destructive (it only re-locks
- * the disclaimer gate, keeping local data), while Privacy, Manage Data and
+ * The four data/account rows — Privacy, Manage Data, Lock App and Delete
+ * Account — are handled with extra care: Lock App is non-destructive (it only
+ * re-locks the disclaimer gate, keeping local data — see THEA-12a F1, which
+ * is what made that guarantee actually true), while Privacy, Manage Data and
  * Delete Account carry legal/irreversible weight and are gated behind
  * compliance review (see THEA-12a) rather than shipping unreviewed copy.
+ *
+ * "Lock App", not "Log out": there is no account or sign-in anywhere in this
+ * app (THEA-12a §0) and that label would promise protection the app does not
+ * provide (THEA-12a F2).
  */
 
 function Chevron() {
@@ -49,26 +55,32 @@ export default function SettingsScreen() {
       ? 'At injection time'
       : `${settings.alarmOffsetsMin.length} alert${settings.alarmOffsetsMin.length === 1 ? '' : 's'} per dose`;
 
+  const LOCK_MESSAGE =
+    'You will need to accept the safety disclaimer again to get back in. Nothing is deleted — your profile, stacks and logs stay on this device.';
+
+  const lockApp = () => {
+    // Reminders live in the OS, not AsyncStorage — leaving them scheduled
+    // would keep naming the user's compounds on the lock screen of an app
+    // they just locked (THEA-12a §5). onboarding re-syncs them on unlock.
+    void cancelAllReminders();
+    // Non-destructive: re-locks the disclaimer gate, keeps all local data.
+    // True as of THEA-12a F1 — onboarding now merges into the existing
+    // profile on re-entry instead of overwriting it with fresh defaults.
+    updateProfile({ acceptedDisclaimerAt: undefined });
+    router.replace('/');
+  };
+
   const onLogOut = () => {
     if (Platform.OS === 'web') {
       // Alert has no buttons on web; fall back to confirm().
       // eslint-disable-next-line no-alert
-      if (typeof confirm === 'function' && !confirm('Are you sure you want to log out?')) return;
-      updateProfile({ acceptedDisclaimerAt: undefined });
-      router.replace('/');
+      if (typeof confirm === 'function' && !confirm(`Lock the app?\n\n${LOCK_MESSAGE}`)) return;
+      lockApp();
       return;
     }
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
+    Alert.alert('Lock the app?', LOCK_MESSAGE, [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: () => {
-          // Non-destructive: re-locks the disclaimer gate, keeps all local data.
-          updateProfile({ acceptedDisclaimerAt: undefined });
-          router.replace('/');
-        },
-      },
+      { text: 'Lock', onPress: lockApp },
     ]);
   };
 
@@ -120,7 +132,12 @@ export default function SettingsScreen() {
 
       <Caption color={colors.textMuted}>Account</Caption>
       <Spacer size={spacing.sm} />
-      <ListRow title="Log out" onPress={onLogOut} right={<Ionicons name="log-out-outline" size={18} color={colors.textMuted} />} />
+      <ListRow
+        title="Lock app"
+        subtitle="Re-locks the safety disclaimer. Your data stays on this device."
+        onPress={onLogOut}
+        right={<Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />}
+      />
       <ListRow
         title="Delete account"
         tone="critical"
