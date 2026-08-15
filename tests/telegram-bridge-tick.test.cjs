@@ -9,16 +9,20 @@ const path = require('node:path');
 const {
   recordPending,
   getPendingMap,
+  removePending,
   getUpdateOffset,
   setUpdateOffset,
   getNotifiedState,
   markInteractionNotified,
   markBlockedIssueNotified,
+  getLastPoller,
+  recordPoller,
 } = require('../ops/telegram-bridge/pendingStore.cjs');
 const { computeAutoRoute } = require('../ops/telegram-bridge/interactionRoute.cjs');
+const { detectSecondConsumer } = require('../ops/telegram-bridge/singleConsumerGuard.cjs');
 const { findNotifiableEvents, isHumanOnlyInteraction, isHumanUnblockOwner } = require('../ops/telegram-bridge/notifiableEvents.cjs');
 const { scanAndNotify, buildEventPayload, buildIssueUrl } = require('../ops/telegram-bridge/scan.cjs');
-const { pollAndRouteTick } = require('../ops/telegram-bridge/poll.cjs');
+const { pollAndRouteTick, routeUpdate } = require('../ops/telegram-bridge/poll.cjs');
 const { runBridgeTick } = require('../ops/telegram-bridge/runBridgeTick.cjs');
 
 const tmpStores = [];
@@ -63,6 +67,54 @@ describe('pendingStore', () => {
     const storePath = tmpStorePath();
     const state = await getNotifiedState({ storePath });
     assert.deepEqual(state, { interactionIds: [], blockedIssueIds: [] });
+  });
+
+  it('removes a pending entry once routed', async () => {
+    const storePath = tmpStorePath();
+    await recordPending(101, { issueId: 'i1', interactionId: 'x1', kind: 'ask_user_questions_freetext' }, { storePath });
+    await removePending(101, { storePath });
+    const map = await getPendingMap({ storePath });
+    assert.equal(map['101'], undefined);
+  });
+
+  it('tracks the last poller instance and timestamp', async () => {
+    const storePath = tmpStorePath();
+    assert.equal(await getLastPoller({ storePath }), null);
+    await recordPoller('host-a:123', 1000, { storePath });
+    assert.deepEqual(await getLastPoller({ storePath }), { instanceId: 'host-a:123', at: 1000 });
+  });
+});
+
+describe('singleConsumerGuard / detectSecondConsumer', () => {
+  it('warns when a different instance polled recently', () => {
+    const warn = detectSecondConsumer({
+      lastPoller: { instanceId: 'host-a:1', at: 1000 },
+      instanceId: 'host-b:2',
+      now: 1000 + 10_000,
+    });
+    assert.equal(warn, true);
+  });
+
+  it('does not warn for the same instance polling again', () => {
+    const warn = detectSecondConsumer({
+      lastPoller: { instanceId: 'host-a:1', at: 1000 },
+      instanceId: 'host-a:1',
+      now: 1000 + 10_000,
+    });
+    assert.equal(warn, false);
+  });
+
+  it('does not warn once the guard window has passed', () => {
+    const warn = detectSecondConsumer({
+      lastPoller: { instanceId: 'host-a:1', at: 1000 },
+      instanceId: 'host-b:2',
+      now: 1000 + 100_000,
+    });
+    assert.equal(warn, false);
+  });
+
+  it('does not warn when there is no prior poller', () => {
+    assert.equal(detectSecondConsumer({ lastPoller: null, instanceId: 'host-a:1', now: 1000 }), false);
   });
 });
 
@@ -246,35 +298,139 @@ describe('scanAndNotify (fetch injected)', () => {
   });
 });
 
+function telegramCallRouter(handlers) {
+  return async (url, opts) => {
+    const u = String(url);
+    if (u.includes('/getUpdates')) return handlers.getUpdates(u);
+    if (u.includes('/sendMessage')) return handlers.sendMessage(JSON.parse(opts.body));
+    if (u.includes('/respond')) return handlers.respond(u, opts && JSON.parse(opts.body));
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+}
+
 describe('pollAndRouteTick', () => {
   it('persists the update offset and routes a reply, using it on the next tick', async () => {
     const storePath = tmpStorePath();
-    await recordPending(101, { issueId: 'issue-1', interactionId: 'int-1', kind: 'ask_user_questions_freetext', questionId: 'q1', freeTextOptionId: 'other' }, { storePath });
+    await recordPending(101, { issueId: 'issue-1', interactionId: 'int-1', issueTitle: 'Telegram bridge', kind: 'ask_user_questions_freetext', questionId: 'q1', freeTextOptionId: 'other' }, { storePath });
 
     const env = { TELEGRAM_BOT_TOKEN: 'token', PAPERCLIP_API_URL: 'https://paper.example.test/api', PAPERCLIP_API_KEY: 'key' };
     const update = {
       update_id: 9001,
-      message: { text: 'Use the secrets store', reply_to_message: { message_id: 101 } },
+      message: { message_id: 501, chat: { id: -1 }, text: 'Use the secrets store', reply_to_message: { message_id: 101 } },
     };
 
     const seenOffsets = [];
-    const fetchImpl = async (url) => {
-      const u = String(url);
-      if (u.includes('api.telegram.org')) {
+    const sendMessages = [];
+    const fetchImpl = telegramCallRouter({
+      getUpdates: (u) => {
         seenOffsets.push(new URL(u).searchParams.get('offset'));
         return jsonResponse({ ok: true, result: seenOffsets.length === 1 ? [update] : [] });
-      }
-      if (u.includes('/respond')) return jsonResponse({ ok: true });
-      throw new Error(`unexpected fetch: ${u}`);
-    };
+      },
+      sendMessage: (body) => {
+        sendMessages.push(body);
+        return jsonResponse({ ok: true, result: { message_id: 900 } });
+      },
+      respond: () => jsonResponse({ ok: true }),
+    });
 
     const first = await pollAndRouteTick({ env, fetchImpl, storePath });
     assert.equal(first.length, 1);
     assert.equal(first[0].ok, true);
     assert.equal(await getUpdateOffset({ storePath }), 9002);
 
+    // Ack sent on success, threaded as a reply to the inbound message.
+    assert.equal(sendMessages.length, 1);
+    assert.match(sendMessages[0].text, /✅ Got it — routed to Telegram bridge/);
+    assert.equal(sendMessages[0].reply_to_message_id, 501);
+
+    // Routed entry is cleared so it stops counting as pending.
+    assert.equal((await getPendingMap({ storePath }))['101'], undefined);
+
     await pollAndRouteTick({ env, fetchImpl, storePath });
     assert.equal(seenOffsets[1], '9002'); // second tick resumes from the persisted offset
+  });
+
+  it('sends a hint instead of an ack when the reply cannot be matched', async () => {
+    const storePath = tmpStorePath();
+    const env = { TELEGRAM_BOT_TOKEN: 'token', PAPERCLIP_API_URL: 'https://paper.example.test/api', PAPERCLIP_API_KEY: 'key' };
+    const update = {
+      update_id: 9001,
+      message: { message_id: 501, chat: { id: -1 }, text: 'hi', reply_to_message: { message_id: 999 } },
+    };
+
+    const sendMessages = [];
+    let firstPoll = true;
+    const fetchImpl = telegramCallRouter({
+      getUpdates: () => {
+        const result = firstPoll ? [update] : [];
+        firstPoll = false;
+        return jsonResponse({ ok: true, result });
+      },
+      sendMessage: (body) => {
+        sendMessages.push(body);
+        return jsonResponse({ ok: true, result: { message_id: 900 } });
+      },
+      respond: () => jsonResponse({ ok: true }),
+    });
+
+    const results = await pollAndRouteTick({ env, fetchImpl, storePath });
+    assert.equal(results[0].ok, false);
+    assert.equal(results[0].reason, 'no_pending_match');
+    assert.equal(sendMessages.length, 1);
+    assert.match(sendMessages[0].text, /Couldn't match that/);
+  });
+
+  it('routes a plain reply when exactly one interaction is pending', async () => {
+    const storePath = tmpStorePath();
+    await recordPending(101, { issueId: 'issue-1', interactionId: 'int-1', issueTitle: 'Telegram bridge', kind: 'ask_user_questions_freetext', questionId: 'q1', freeTextOptionId: 'other' }, { storePath });
+
+    const env = { TELEGRAM_BOT_TOKEN: 'token', PAPERCLIP_API_URL: 'https://paper.example.test/api', PAPERCLIP_API_KEY: 'key' };
+    const update = {
+      update_id: 9001,
+      message: { message_id: 502, chat: { id: -1 }, text: 'Use the secrets store' }, // no reply_to_message
+    };
+
+    let firstPoll = true;
+    const sendMessages = [];
+    const fetchImpl = telegramCallRouter({
+      getUpdates: () => {
+        const result = firstPoll ? [update] : [];
+        firstPoll = false;
+        return jsonResponse({ ok: true, result });
+      },
+      sendMessage: (body) => {
+        sendMessages.push(body);
+        return jsonResponse({ ok: true, result: { message_id: 900 } });
+      },
+      respond: () => jsonResponse({ ok: true }),
+    });
+
+    const results = await pollAndRouteTick({ env, fetchImpl, storePath });
+    assert.equal(results[0].ok, true);
+    assert.match(sendMessages[0].text, /✅ Got it — routed to Telegram bridge/);
+  });
+
+  it('warns when a different instance polled inside the guard window', async () => {
+    const storePath = tmpStorePath();
+    await recordPoller('other-host:1', 1_000, { storePath });
+
+    const env = { TELEGRAM_BOT_TOKEN: 'token', PAPERCLIP_API_URL: 'https://paper.example.test/api', PAPERCLIP_API_KEY: 'key', TELEGRAM_BRIDGE_INSTANCE_ID: 'this-host:2' };
+    const fetchImpl = telegramCallRouter({
+      getUpdates: () => jsonResponse({ ok: true, result: [] }),
+      sendMessage: () => jsonResponse({ ok: true, result: { message_id: 1 } }),
+      respond: () => jsonResponse({ ok: true }),
+    });
+
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+      await pollAndRouteTick({ env, fetchImpl, storePath, now: 1_000 + 5_000 });
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(warnings.some((w) => w.includes('possible second poller detected')), true);
+    assert.deepEqual(await getLastPoller({ storePath }), { instanceId: 'this-host:2', at: 6_000 });
   });
 });
 

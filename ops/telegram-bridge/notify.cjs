@@ -52,11 +52,12 @@ async function sendNotification(event, { fetchImpl = fetch, env = process.env, s
     ? {
         issueId: event.issueId,
         interactionId: event.interactionId,
+        issueTitle: event.issueTitle,
         kind: 'ask_user_questions_freetext',
         questionId: event.route.questionId,
         freeTextOptionId: event.route.freeTextOptionId,
       }
-    : { issueId: event.issueId, interactionId: event.interactionId, kind: 'unsupported' };
+    : { issueId: event.issueId, interactionId: event.interactionId, issueTitle: event.issueTitle, kind: 'unsupported' };
   await recordPending(messageId, pendingEntry, { storePath });
   return { messageId };
 }

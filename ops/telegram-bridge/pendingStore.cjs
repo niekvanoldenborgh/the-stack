@@ -12,13 +12,21 @@
  *
  * Sections:
  *   pendingByMessageId    — Telegram message_id -> { issueId, interactionId,
- *                            kind, questionId?, freeTextOptionId? }, written
- *                            by notify.cjs, read by poll.cjs to route replies.
+ *                            issueTitle, kind, questionId?,
+ *                            freeTextOptionId? }, written by notify.cjs, read
+ *                            by poll.cjs to route replies, and deleted by
+ *                            poll.cjs once a reply is routed (THEA-28) so the
+ *                            single-pending fallback in mapUpdate.cjs reflects
+ *                            what's actually still awaiting an answer.
  *   updateOffset          — last-processed Telegram update_id + 1, so a tick
  *                            doesn't re-fetch updates it already routed.
  *   notifiedInteractionIds — interaction ids already notified, so scan.cjs
  *                            doesn't re-notify every tick.
  *   notifiedBlockedIssueIds — same, for `blocked`-issue notifications.
+ *   lastPoller             — { instanceId, at } for the most recent
+ *                            pollAndRouteTick call, so a second concurrent
+ *                            poller against the same store can be detected
+ *                            (THEA-28 #3) — see singleConsumerGuard.cjs.
  */
 
 const fs = require('node:fs');
@@ -31,6 +39,7 @@ const EMPTY_STORE = () => ({
   updateOffset: null,
   notifiedInteractionIds: [],
   notifiedBlockedIssueIds: [],
+  lastPoller: null,
 });
 
 function load(storePath) {
@@ -56,6 +65,13 @@ async function recordPending(messageId, entry, { storePath = DEFAULT_PATH } = {}
 
 async function getPendingMap({ storePath = DEFAULT_PATH } = {}) {
   return load(storePath).pendingByMessageId;
+}
+
+/** Drop a routed (or otherwise resolved) entry so it stops counting as pending. */
+async function removePending(messageId, { storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  delete data.pendingByMessageId[String(messageId)];
+  save(storePath, data);
 }
 
 async function getUpdateOffset({ storePath = DEFAULT_PATH } = {}) {
@@ -98,10 +114,21 @@ async function markBlockedIssueNotified(issueId, { storePath = DEFAULT_PATH } = 
   }
 }
 
+async function getLastPoller({ storePath = DEFAULT_PATH } = {}) {
+  return load(storePath).lastPoller;
+}
+
+async function recordPoller(instanceId, at, { storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  data.lastPoller = { instanceId, at };
+  save(storePath, data);
+}
+
 module.exports = {
   DEFAULT_PATH,
   recordPending,
   getPendingMap,
+  removePending,
   getUpdateOffset,
   setUpdateOffset,
   isInteractionNotified,
@@ -109,4 +136,6 @@ module.exports = {
   markInteractionNotified,
   isBlockedIssueNotified,
   markBlockedIssueNotified,
+  getLastPoller,
+  recordPoller,
 };

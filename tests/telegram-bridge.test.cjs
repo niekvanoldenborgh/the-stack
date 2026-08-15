@@ -49,12 +49,13 @@ describe('telegram-bridge / mapReplyToInteraction', () => {
       {
         issueId: 'issue-1',
         interactionId: 'int-1',
+        issueTitle: 'Telegram bridge',
         kind: 'ask_user_questions_freetext',
         questionId: 'q1',
         freeTextOptionId: 'other',
       },
     ],
-    [102, { issueId: 'issue-2', interactionId: 'int-2', kind: 'unsupported' }],
+    [102, { issueId: 'issue-2', interactionId: 'int-2', issueTitle: 'Other issue', kind: 'unsupported' }],
   ]);
 
   it('routes a reply to the matching pending interaction', () => {
@@ -66,9 +67,11 @@ describe('telegram-bridge / mapReplyToInteraction', () => {
       ok: true,
       issueId: 'issue-1',
       interactionId: 'int-1',
+      issueTitle: 'Telegram bridge',
       questionId: 'q1',
       freeTextOptionId: 'other',
       responseText: 'Use the Paperclip secrets store',
+      pendingMessageId: 101,
     });
   });
 
@@ -100,5 +103,51 @@ describe('telegram-bridge / mapReplyToInteraction', () => {
     const update = { message: { text: 'ok', reply_to_message: { message_id: 101 } } };
     const plainPending = { 101: pending.get(101) };
     assert.equal(mapReplyToInteraction(update, plainPending).ok, true);
+  });
+
+  it('routes a plain (non-reply) message when exactly one interaction is pending', () => {
+    const onePending = new Map([[101, pending.get(101)]]);
+    const update = { message: { text: 'Use the Paperclip secrets store' } };
+    const result = mapReplyToInteraction(update, onePending);
+    assert.deepEqual(result, {
+      ok: true,
+      issueId: 'issue-1',
+      interactionId: 'int-1',
+      issueTitle: 'Telegram bridge',
+      questionId: 'q1',
+      freeTextOptionId: 'other',
+      responseText: 'Use the Paperclip secrets store',
+      pendingMessageId: 101,
+    });
+  });
+
+  it('does not fall back to a single pending interaction of an unsupported kind', () => {
+    const onePending = new Map([[102, pending.get(102)]]);
+    const update = { message: { text: 'yes' } };
+    const result = mapReplyToInteraction(update, onePending);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'unsupported_interaction_kind');
+  });
+
+  it('still drops a plain message with no pending interactions at all', () => {
+    const update = { message: { text: 'hello' } };
+    const result = mapReplyToInteraction(update, new Map());
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'not_a_reply');
+  });
+
+  it('does not fall back when 2+ interactions are pending', () => {
+    const update = { message: { text: 'hello' } };
+    const result = mapReplyToInteraction(update, pending);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'not_a_reply');
+  });
+
+  it('a reply to an unknown message does not fall back even with exactly one pending', () => {
+    const onePending = new Map([[101, pending.get(101)]]);
+    const update = { message: { text: 'hi', reply_to_message: { message_id: 999 } } };
+    const result = mapReplyToInteraction(update, onePending);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'no_pending_match');
   });
 });
