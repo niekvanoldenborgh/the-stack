@@ -18,14 +18,14 @@
  */
 
 const { mapReplyToInteraction } = require('./mapUpdate.cjs');
-const { getPendingMap } = require('./pendingStore.cjs');
+const { getPendingMap, getUpdateOffset, setUpdateOffset } = require('./pendingStore.cjs');
 
-async function pollOnce({ offset, fetchImpl = fetch, env = process.env } = {}) {
+async function pollOnce({ offset, timeoutSeconds = 30, fetchImpl = fetch, env = process.env } = {}) {
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
 
   const url = new URL(`https://api.telegram.org/bot${token}/getUpdates`);
-  url.searchParams.set('timeout', '30');
+  url.searchParams.set('timeout', String(timeoutSeconds));
   if (offset != null) url.searchParams.set('offset', String(offset));
 
   const res = await fetchImpl(url.toString());
@@ -34,8 +34,8 @@ async function pollOnce({ offset, fetchImpl = fetch, env = process.env } = {}) {
   return body.result;
 }
 
-async function routeUpdate(update, { fetchImpl = fetch, env = process.env } = {}) {
-  const pending = await getPendingMap();
+async function routeUpdate(update, { fetchImpl = fetch, env = process.env, storePath } = {}) {
+  const pending = await getPendingMap({ storePath });
   const routed = mapReplyToInteraction(update, pending);
   if (!routed.ok) return routed;
 
@@ -80,6 +80,31 @@ async function runForever() {
   }
 }
 
+/**
+ * One scheduled-routine tick of the inbound half: fetch whatever Telegram
+ * updates have arrived since the offset persisted last tick, route each,
+ * persist the new offset. Short `timeoutSeconds` (not the 30s used by
+ * `runForever`'s literal long-poll) so a single tick doesn't eat the whole
+ * per-minute execution budget waiting on Telegram.
+ */
+async function pollAndRouteTick({ fetchImpl = fetch, env = process.env, storePath, timeoutSeconds = 20 } = {}) {
+  const offset = await getUpdateOffset({ storePath });
+  const updates = await pollOnce({ offset: offset ?? undefined, timeoutSeconds, fetchImpl, env });
+
+  const results = [];
+  let nextOffset = offset;
+  for (const update of updates) {
+    nextOffset = update.update_id + 1;
+    const result = await routeUpdate(update, { fetchImpl, env, storePath });
+    if (!result.ok && result.reason !== 'not_a_reply' && result.reason !== 'not_a_message') {
+      console.warn('[telegram-bridge] unrouted update', update.update_id, result.reason);
+    }
+    results.push({ updateId: update.update_id, ...result });
+  }
+  if (nextOffset !== offset) await setUpdateOffset(nextOffset, { storePath });
+  return results;
+}
+
 if (require.main === module) {
   runForever().catch((err) => {
     console.error('[telegram-bridge] poll loop crashed', err);
@@ -87,4 +112,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { pollOnce, routeUpdate, runForever };
+module.exports = { pollOnce, routeUpdate, runForever, pollAndRouteTick };

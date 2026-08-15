@@ -28,7 +28,7 @@
 const { buildNotificationMessage } = require('./formatNotification.cjs');
 const { recordPending } = require('./pendingStore.cjs');
 
-async function sendNotification(event, { fetchImpl = fetch, env = process.env } = {}) {
+async function sendNotification(event, { fetchImpl = fetch, env = process.env, storePath } = {}) {
   const token = env.TELEGRAM_BOT_TOKEN;
   const chatId = env.TELEGRAM_CHAT_ID;
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
@@ -57,7 +57,7 @@ async function sendNotification(event, { fetchImpl = fetch, env = process.env } 
         freeTextOptionId: event.route.freeTextOptionId,
       }
     : { issueId: event.issueId, interactionId: event.interactionId, kind: 'unsupported' };
-  await recordPending(messageId, pendingEntry);
+  await recordPending(messageId, pendingEntry, { storePath });
   return { messageId };
 }
 

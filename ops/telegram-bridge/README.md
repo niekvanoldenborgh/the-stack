@@ -6,88 +6,109 @@ it can't re-block THEA-4.
 
 Bot + chat validated working 2026-08-14 (group "paperclip - the stack",
 chat `-5399152677`). **That token was pasted in plaintext in the THEA-4
-thread and must be regenerated via BotFather once it's read from a real
-secrets store** — do not reuse it as-is.
+thread and must be regenerated via BotFather** — the owner places the
+regenerated token on the host (see Decisions below); do not reuse the old
+one as-is.
 
-## What's built (this heartbeat)
+## Decisions (owner, 2026-08-15)
 
-Pure, unit-tested logic with no dependency on the two decisions below:
+1. **Runtime host = scheduled poll.** A Paperclip routine trigger calls
+   `runBridgeTick.cjs` on a per-minute schedule — no plugin, no external
+   always-on host. Each tick is a separate process execution.
+2. **Token storage = owner-provided `.env` on the host.** Not the
+   secret-proposal flow. The owner regenerates the token via BotFather and
+   places `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` on whatever host runs the
+   routine.
 
-- `formatNotification.cjs` — composes the outbound Telegram message for an
-  interaction or a `blocked` issue.
-- `mapUpdate.cjs` — routes an inbound Telegram reply (a Telegram *reply* to
-  the bot's notification message) back to `{issueId, interactionId}`.
-- `notify.cjs` — thin wrapper: calls Telegram `sendMessage`, records the
-  Telegram `message_id` → interaction mapping via `pendingStore.cjs`.
-- `poll.cjs` — thin wrapper: long-polls Telegram `getUpdates`, calls
-  `mapUpdate`, then `POST /api/issues/{id}/interactions/{interactionId}/respond`.
-- `pendingStore.cjs` — **placeholder** file-based persistence for the
-  message-id → interaction mapping. Explicitly not the final design (see
-  Decision 2).
-- `tests/telegram-bridge.test.cjs` — covers formatting and routing,
-  including the "don't guess" cases (no reply-to, unmatched message,
-  unsupported interaction shape).
+Still owner/Board for go-live (not blockers for this code): the owner
+placing the token, and a Board member creating the routine trigger.
 
-Routing only auto-resolves for a **single-question `ask_user_questions`
-interaction with a free-text option** — Paperclip's `respond` endpoint takes
-structured `{questionId, optionIds, otherText}`, not raw text, so a reply to
-a multi-question or `request_confirmation` interaction is reported as
-`unsupported_interaction_kind` rather than mapped by guesswork (e.g.
-sniffing "yes"/"no" out of free text). Extending coverage to those is
-follow-up scope once the two decisions below are made.
+## Entrypoint
 
-## Two decisions still needed (owner) — blocking a real deployment
+`runBridgeTick.cjs` is the one thing the scheduled routine calls:
 
-I checked what's actually available under this agent's permissions before
-listing options; both need Board/owner-level access I don't have as the
-Developer agent.
+```js
+const { runBridgeTick } = require('./runBridgeTick.cjs');
+await runBridgeTick(); // reads config from process.env
+```
 
-### 1. Where do `TELEGRAM_BOT_TOKEN` / chat id live?
+Each tick does both halves, in order:
 
-Paperclip already has a secrets pipeline that fits this:
-- `POST /api/companies/{companyId}/secrets` — company-level secret, then
-  reference it as `secret_ref` in an agent's `adapterConfig.env` (this is
-  exactly how this agent's own `DB_PASSWORD` is delivered today).
-- `POST /api/agents/me/secret-proposals` — an agent can *propose* a secret
-  for Board approval, which fits a Developer agent's permission level
-  better than direct `POST .../secrets` (confirmed: that endpoint returns
-  `"Board access required"` for this agent).
+1. **Inbound** (`poll.cjs` → `pollAndRouteTick`) — fetch whatever Telegram
+   updates arrived since the last tick's persisted offset, route each reply
+   to its Paperclip interaction via `mapUpdate.cjs`, `POST
+   /api/issues/{id}/interactions/{interactionId}/respond`.
+2. **Outbound** (`scan.cjs` → `scanAndNotify`) — walk company issues for
+   ones newly needing a human (see "Human-only heuristics" below) and not
+   already notified, send one Telegram message each via `notify.cjs`.
 
-**Recommendation:** store both as company secrets via the proposal flow,
-delivered as env to whichever agent/host runs `poll.cjs`. Needs Board
-approval either way — I can submit the proposal once host (below) is
-decided, since the delivery target depends on it.
+Both halves read/write the same file-backed store (`pendingStore.cjs`) so
+state — the Telegram update offset, the message→interaction map, and which
+interactions/issues have already been notified — survives across ticks.
+That file must live somewhere persistent across the routine's executions
+(not a fresh checkout each run); if the routine's working directory isn't
+stable, point `storePath` at a durable path instead of the module default.
 
-### 2. Where does the inbound poller run continuously?
+## Module map
 
-Confirmed via `/api/plugins`, `/api/adapters` (both `"Board access
-required"` for this agent) that installing new runtime surfaces is a
-Board-only action. Options found in the platform, for the owner to pick
-from:
+- `formatNotification.cjs` — pure: composes the outbound Telegram message.
+- `mapUpdate.cjs` — pure: routes an inbound reply → `{issueId,
+  interactionId}` via Telegram's reply-to threading only (no guessing).
+- `interactionRoute.cjs` — pure: does a fetched interaction qualify for
+  auto-routed replies (single question, free-text option)?
+- `notifiableEvents.cjs` — pure: which issues/interactions need a Telegram
+  notification, given already-notified ids.
+- `notify.cjs` — sends one Telegram message, records the pending mapping.
+- `poll.cjs` — `getUpdates` + `routeUpdate` (single update) +
+  `pollAndRouteTick` (one tick: drain updates, persist offset).
+- `scan.cjs` — fetches company issues + per-issue interactions, applies
+  `notifiableEvents.cjs`, calls `notify.cjs`, marks each as sent.
+- `pendingStore.cjs` — single JSON file backing all cross-tick state.
+- `runBridgeTick.cjs` — the entrypoint the scheduled routine calls.
+- `tests/telegram-bridge.test.cjs`,
+  `tests/telegram-bridge-tick.test.cjs` — unit tests, fetch injected.
 
-- **Paperclip plugin** — `/api/plugins/{pluginId}/jobs` and
-  `/api/plugins/{pluginId}/webhooks/{endpointKey}` exist, suggesting a
-  plugin can host either a recurring job (polling) or a webhook target
-  (if Telegram is switched from long-poll to `setWebhook`). Needs a Board
-  member to install/configure the plugin.
-- **External always-on host** — a small always-on process (existing infra
-  outside Paperclip) running `poll.cjs`, calling back into the Paperclip
-  API with an API key scoped to this. Simplest to reason about, but is
-  infra this team would need to already operate.
-- **Paperclip routine trigger** — `/api/routine-triggers` looked like
-  scheduled/periodic execution rather than a true persistent long-poll;
-  would mean trading Telegram long-polling for short-interval scheduled
-  `getUpdates` calls (still correct, just not literally "persistent").
+## Config (env)
 
-I did not pick one — this determines where `pendingStore.cjs` gets
-replaced with real persistence, and who holds the bot token, so it's the
-owner's call.
+| var | used by |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | inbound + outbound |
+| `TELEGRAM_CHAT_ID` | outbound |
+| `PAPERCLIP_API_URL` | inbound + outbound |
+| `PAPERCLIP_API_KEY` | inbound + outbound |
+| `PAPERCLIP_COMPANY_ID` | outbound (company-wide issue scan) |
+| `PAPERCLIP_APP_BASE_URL` | outbound, optional — see gap below |
 
-## Not yet built
+## Human-only heuristics (worth re-checking, not a documented contract)
 
-- Real persistence for the pending-message map (currently a single JSON
-  file next to the code — fine for local testing, not for a live bridge).
-- Routing for `request_confirmation` / multi-question interactions.
-- Wiring `notify.cjs` to actually fire when an interaction is created or an
-  issue goes `blocked` (needs the host decision first — nothing to attach
-  it to yet).
+Detecting "this needs a human" was built from what this agent's API access
+could actually see, not a confirmed spec:
+
+- **Interaction**: `effectiveResolverPolicy === 'board_only'` — Paperclip's
+  own statement that no agent, only a human/Board member, can resolve it.
+- **Blocked issue**: `unblockDescriptor.owner` names a user
+  (`owner.userId`/`owner.kind === 'user'`), not an agent (`owner.agentId`
+  present → skipped, that's routing to another agent). Only one real
+  example was available while building this (THEA-14, agent-owned), so the
+  human-owned branch is unverified against a live example — re-check this
+  the first time a real human-owned `blocked` issue shows up.
+
+## Known gaps
+
+- **Deep link URL.** Paperclip's dashboard URL isn't exposed by any API
+  this agent can reach. `buildIssueUrl` falls back to the API base URL
+  (clickable, but resolves to JSON, not the issue page) unless
+  `PAPERCLIP_APP_BASE_URL` is set to the real dashboard origin.
+- **N+1 fetch per tick.** `scan.cjs` calls `/api/issues/{id}/interactions`
+  once per non-terminal company issue — fine at ~20 issues, would need a
+  per-issue `updatedAt` watermark (skip issues unchanged since the last
+  tick) before it'd be fine at issue-tracker scale. The purpose-built
+  aggregate endpoint (`/api/companies/{id}/attention`) returns "Board access
+  required" for this agent — confirmed live, not assumed.
+- **Routing coverage.** Inbound auto-routing only covers single-question,
+  free-text `ask_user_questions`. Multi-question and `request_confirmation`
+  interactions still notify outbound but report `unsupported_interaction_kind`
+  on reply rather than guess — real engineering scope, not done here.
+- **Single-poller assumption.** `pendingStore.cjs` is a plain
+  read-modify-write JSON file — correct for one routine tick running at a
+  time, not concurrent replicas.

@@ -1,14 +1,24 @@
 'use strict';
 
 /**
- * Placeholder persistence for "which Telegram message maps to which
- * Paperclip interaction". File-based JSON, single process only.
+ * Durable state for the Telegram bridge, shared by both halves of
+ * `runBridgeTick` (inbound poll+route, outbound scan+notify).
  *
- * This is a stand-in, not the final design: once the runtime-host decision
- * (README.md) is made, this should become whatever storage that host
- * naturally offers (e.g. a plugin's own data store, a DB table) so state
- * survives restarts and works across replicas. Swap the implementation
- * here; callers only use recordPending/getPending.
+ * Each scheduled routine tick is a separate process execution — nothing
+ * held in memory survives to the next tick — so this has to be a file the
+ * next tick can re-read. Single JSON file, read-modify-write; correct for
+ * one poller instance at a time (the runtime-host decision was a single
+ * scheduled routine, not multiple replicas — see README.md).
+ *
+ * Sections:
+ *   pendingByMessageId    — Telegram message_id -> { issueId, interactionId,
+ *                            kind, questionId?, freeTextOptionId? }, written
+ *                            by notify.cjs, read by poll.cjs to route replies.
+ *   updateOffset          — last-processed Telegram update_id + 1, so a tick
+ *                            doesn't re-fetch updates it already routed.
+ *   notifiedInteractionIds — interaction ids already notified, so scan.cjs
+ *                            doesn't re-notify every tick.
+ *   notifiedBlockedIssueIds — same, for `blocked`-issue notifications.
  */
 
 const fs = require('node:fs');
@@ -16,23 +26,87 @@ const path = require('node:path');
 
 const DEFAULT_PATH = path.join(__dirname, '.pending-store.json');
 
+const EMPTY_STORE = () => ({
+  pendingByMessageId: {},
+  updateOffset: null,
+  notifiedInteractionIds: [],
+  notifiedBlockedIssueIds: [],
+});
+
 function load(storePath) {
   try {
-    return JSON.parse(fs.readFileSync(storePath, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+    return { ...EMPTY_STORE(), ...data };
   } catch (err) {
-    if (err.code === 'ENOENT') return {};
+    if (err.code === 'ENOENT') return EMPTY_STORE();
     throw err;
   }
 }
 
-async function recordPending(messageId, entry, { storePath = DEFAULT_PATH } = {}) {
-  const data = load(storePath);
-  data[String(messageId)] = entry;
+function save(storePath, data) {
+  fs.mkdirSync(path.dirname(storePath), { recursive: true });
   fs.writeFileSync(storePath, JSON.stringify(data, null, 2));
 }
 
-async function getPendingMap({ storePath = DEFAULT_PATH } = {}) {
-  return load(storePath);
+async function recordPending(messageId, entry, { storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  data.pendingByMessageId[String(messageId)] = entry;
+  save(storePath, data);
 }
 
-module.exports = { recordPending, getPendingMap, DEFAULT_PATH };
+async function getPendingMap({ storePath = DEFAULT_PATH } = {}) {
+  return load(storePath).pendingByMessageId;
+}
+
+async function getUpdateOffset({ storePath = DEFAULT_PATH } = {}) {
+  return load(storePath).updateOffset;
+}
+
+async function setUpdateOffset(offset, { storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  data.updateOffset = offset;
+  save(storePath, data);
+}
+
+async function isInteractionNotified(interactionId, { storePath = DEFAULT_PATH } = {}) {
+  return load(storePath).notifiedInteractionIds.includes(interactionId);
+}
+
+/** One-read snapshot of both notified-id sets, for callers checking many ids at once. */
+async function getNotifiedState({ storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  return { interactionIds: data.notifiedInteractionIds, blockedIssueIds: data.notifiedBlockedIssueIds };
+}
+
+async function markInteractionNotified(interactionId, { storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  if (!data.notifiedInteractionIds.includes(interactionId)) {
+    data.notifiedInteractionIds.push(interactionId);
+    save(storePath, data);
+  }
+}
+
+async function isBlockedIssueNotified(issueId, { storePath = DEFAULT_PATH } = {}) {
+  return load(storePath).notifiedBlockedIssueIds.includes(issueId);
+}
+
+async function markBlockedIssueNotified(issueId, { storePath = DEFAULT_PATH } = {}) {
+  const data = load(storePath);
+  if (!data.notifiedBlockedIssueIds.includes(issueId)) {
+    data.notifiedBlockedIssueIds.push(issueId);
+    save(storePath, data);
+  }
+}
+
+module.exports = {
+  DEFAULT_PATH,
+  recordPending,
+  getPendingMap,
+  getUpdateOffset,
+  setUpdateOffset,
+  isInteractionNotified,
+  getNotifiedState,
+  markInteractionNotified,
+  isBlockedIssueNotified,
+  markBlockedIssueNotified,
+};
