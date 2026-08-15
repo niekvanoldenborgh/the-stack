@@ -8,6 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "demo": "EXPO_PUBLIC_DEMO=1 expo start --web",
+    "onboarding": "EXPO_PUBLIC_ONBOARDING=1 expo start --web",
     "preview": "EXPO_PUBLIC_DEMO=1 expo export --platform web && node scripts/serve-preview.mjs",
     "typecheck": "tsc --noEmit",
     "pretest": "tsc -p tsconfig.test.json",

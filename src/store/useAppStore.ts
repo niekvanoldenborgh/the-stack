@@ -389,6 +389,17 @@ export const useAppStore = create<AppState>()(
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
+        // Onboarding harness only. With the flag unset this branch is dead and
+        // production behaviour is byte-identical. Reuses the existing resetAll()
+        // rather than hand-rolling a clear, so a fresh boot wipes persisted state
+        // back to first-run and app/index.tsx redirects to /onboarding. Mutually
+        // exclusive with the demo flag: onboarding wins if both are set, and the
+        // demo seed branch below is skipped so no seeded data survives. See
+        // docs/onboarding-harness.md.
+        if (process.env.EXPO_PUBLIC_ONBOARDING === '1') {
+          useAppStore.getState().resetAll();
+          return;
+        }
         // Demo harness only. With the flag unset this branch is dead and the
         // seed module is never imported or executed, so production behaviour is
         // byte-identical. The import is dynamic so the seed is never pulled into
