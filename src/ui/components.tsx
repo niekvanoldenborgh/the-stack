@@ -1,4 +1,4 @@
-import { Children, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -468,7 +468,14 @@ export function Callout({
 }) {
   const { fg, bg } = toneColors(tone);
   const parts = Children.toArray(children);
-  const isTextOnly = parts.length > 0 && parts.every((part) => typeof part === 'string' || typeof part === 'number');
+  // A <>...</> fragment shows up here as a single Fragment element, not the
+  // bare strings inside it — unwrap it before judging text-only-ness, or a
+  // fragment full of plain text slips past this check unwrapped and crashes
+  // once it lands directly inside the <View> below.
+  const leaves = parts.flatMap((part) =>
+    isValidElement(part) && part.type === Fragment ? Children.toArray((part.props as { children?: ReactNode }).children) : [part],
+  );
+  const isTextOnly = leaves.length > 0 && leaves.every((part) => typeof part === 'string' || typeof part === 'number');
 
   return (
     <View style={[styles.callout, { borderColor: fg, backgroundColor: bg }]}>
