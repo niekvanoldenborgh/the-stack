@@ -1,3 +1,4 @@
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
@@ -14,15 +15,24 @@ import { fromISODate } from './date';
  * time the app opens (or the stack changes) we clear and re-schedule the next
  * `MAX_SCHEDULED` upcoming doses. That keeps reminders accurate after any edit
  * without ever bumping the platform ceiling.
+ *
+ * expo-notifications' remote-push surface was pulled from Expo Go in SDK 53;
+ * calling into it there throws (Android) or warns and no-ops (iOS/web). We
+ * treat Expo Go the same as `Platform.OS === 'web'` below — every exported
+ * function no-ops before touching the native module — so the app can still
+ * boot and be previewed there. Real dev-client / standalone builds are
+ * untouched: `isExpoGo` is false and behaviour is identical to before.
  */
 
 const MAX_SCHEDULED = 56;
 const CHANNEL_ID = 'peptide-reminders';
 
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
 let handlerConfigured = false;
 
 export function configureNotificationHandler(): void {
-  if (handlerConfigured) return;
+  if (isExpoGo || handlerConfigured) return;
   handlerConfigured = true;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -35,7 +45,7 @@ export function configureNotificationHandler(): void {
 }
 
 export async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  if (isExpoGo || Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
     name: 'Dose reminders',
     importance: Notifications.AndroidImportance.HIGH,
@@ -48,7 +58,7 @@ export async function ensureAndroidChannel(): Promise<void> {
 export type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unsupported';
 
 export async function getPermissionState(): Promise<PermissionState> {
-  if (Platform.OS === 'web') return 'unsupported';
+  if (isExpoGo || Platform.OS === 'web') return 'unsupported';
   const settings = await Notifications.getPermissionsAsync();
   if (settings.granted) return 'granted';
   if (settings.canAskAgain) return 'undetermined';
@@ -56,7 +66,7 @@ export async function getPermissionState(): Promise<PermissionState> {
 }
 
 export async function requestPermission(): Promise<PermissionState> {
-  if (Platform.OS === 'web') return 'unsupported';
+  if (isExpoGo || Platform.OS === 'web') return 'unsupported';
   const existing = await Notifications.getPermissionsAsync();
   if (existing.granted) return 'granted';
   const result = await Notifications.requestPermissionsAsync({
@@ -125,7 +135,7 @@ export async function syncReminders(
   doses: ScheduledDose[],
   alarmOffsetsMin: number[] = [0],
 ): Promise<ScheduleResult> {
-  if (Platform.OS === 'web') return { scheduled: 0, skippedPast: 0, truncated: false };
+  if (isExpoGo || Platform.OS === 'web') return { scheduled: 0, skippedPast: 0, truncated: false };
 
   const permission = await getPermissionState();
   if (permission !== 'granted') return { scheduled: 0, skippedPast: 0, truncated: false };
@@ -169,12 +179,12 @@ export async function syncReminders(
 }
 
 export async function cancelAllReminders(): Promise<void> {
-  if (Platform.OS === 'web') return;
+  if (isExpoGo || Platform.OS === 'web') return;
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
 export async function pendingReminderCount(): Promise<number> {
-  if (Platform.OS === 'web') return 0;
+  if (isExpoGo || Platform.OS === 'web') return 0;
   const pending = await Notifications.getAllScheduledNotificationsAsync();
   return pending.length;
 }
