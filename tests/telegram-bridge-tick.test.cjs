@@ -23,7 +23,7 @@ const { detectSecondConsumer } = require('../ops/telegram-bridge/singleConsumerG
 const { findNotifiableEvents, isHumanOnlyInteraction, isHumanUnblockOwner } = require('../ops/telegram-bridge/notifiableEvents.cjs');
 const { scanAndNotify, buildEventPayload, buildIssueUrl } = require('../ops/telegram-bridge/scan.cjs');
 const { pollAndRouteTick, routeUpdate } = require('../ops/telegram-bridge/poll.cjs');
-const { runBridgeTick } = require('../ops/telegram-bridge/runBridgeTick.cjs');
+const { runBridgeTick, loadDotEnv, parseDotEnv } = require('../ops/telegram-bridge/runBridgeTick.cjs');
 
 const tmpStores = [];
 function tmpStorePath() {
@@ -431,6 +431,43 @@ describe('pollAndRouteTick', () => {
     }
     assert.equal(warnings.some((w) => w.includes('possible second poller detected')), true);
     assert.deepEqual(await getLastPoller({ storePath }), { instanceId: 'this-host:2', at: 6_000 });
+  });
+});
+
+describe('loadDotEnv / parseDotEnv (Node < 20.6 fallback)', () => {
+  it('parses key=value pairs, ignoring blank lines and comments, and strips quotes', () => {
+    const parsed = parseDotEnv(
+      ['# a comment', '', 'FOO=bar', 'QUOTED="has spaces"', "SINGLE='also quoted'", 'EMPTY=', 'malformed line without equals'].join('\n')
+    );
+    assert.deepEqual(parsed, { FOO: 'bar', QUOTED: 'has spaces', SINGLE: 'also quoted', EMPTY: '' });
+  });
+
+  it('loads a fixture .env into the target env without the native loader, and process env wins', () => {
+    const envFilePath = path.join(os.tmpdir(), `telegram-bridge-dotenv-test-${process.pid}.env`);
+    fs.writeFileSync(envFilePath, 'TELEGRAM_BOT_TOKEN=from-file\nNEW_KEY=hello\n');
+    const originalLoader = process.loadEnvFile;
+    try {
+      delete process.loadEnvFile; // simulate Node < 20.6, which lacks this API entirely
+      const targetEnv = { TELEGRAM_BOT_TOKEN: 'from-process' };
+      loadDotEnv(envFilePath, { env: targetEnv });
+      assert.equal(targetEnv.TELEGRAM_BOT_TOKEN, 'from-process'); // existing key untouched
+      assert.equal(targetEnv.NEW_KEY, 'hello');
+    } finally {
+      if (originalLoader) process.loadEnvFile = originalLoader;
+      fs.rmSync(envFilePath, { force: true });
+    }
+  });
+
+  it('is a silent no-op when .env is absent', () => {
+    const originalLoader = process.loadEnvFile;
+    try {
+      delete process.loadEnvFile;
+      const targetEnv = { EXISTING: '1' };
+      assert.doesNotThrow(() => loadDotEnv(path.join(os.tmpdir(), 'telegram-bridge-does-not-exist.env'), { env: targetEnv }));
+      assert.deepEqual(targetEnv, { EXISTING: '1' });
+    } finally {
+      if (originalLoader) process.loadEnvFile = originalLoader;
+    }
   });
 });
 
