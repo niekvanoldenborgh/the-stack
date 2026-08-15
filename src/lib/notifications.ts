@@ -1,5 +1,5 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import * as Notifications from 'expo-notifications';
+import type * as NotificationsModule from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { getPeptide } from '../domain/peptides';
@@ -16,12 +16,18 @@ import { fromISODate } from './date';
  * `MAX_SCHEDULED` upcoming doses. That keeps reminders accurate after any edit
  * without ever bumping the platform ceiling.
  *
- * expo-notifications' remote-push surface was pulled from Expo Go in SDK 53;
- * calling into it there throws (Android) or warns and no-ops (iOS/web). We
- * treat Expo Go the same as `Platform.OS === 'web'` below — every exported
- * function no-ops before touching the native module — so the app can still
- * boot and be previewed there. Real dev-client / standalone builds are
- * untouched: `isExpoGo` is false and behaviour is identical to before.
+ * expo-notifications' remote-push surface was pulled from Expo Go in SDK 53.
+ * Worse: as of the installed ~57.0.9, a *static* `import * as Notifications
+ * from 'expo-notifications'` throws at import time on Android in Expo Go —
+ * the module's own `DevicePushTokenAutoRegistration.fx` side-effect file
+ * calls `addPushTokenListener` at module scope, which throws immediately.
+ * A runtime `isExpoGo` check inside a function body can never guard a static
+ * top-level import, since the import already ran before any function is
+ * called. So the module is loaded lazily via `require`, only from inside
+ * functions that have already checked `isExpoGo` — in Expo Go the require is
+ * never reached, so the throwing side-effect file never loads. Real
+ * dev-client / standalone builds still call `getNotifications()` and behave
+ * identically to a static import.
  */
 
 const MAX_SCHEDULED = 56;
@@ -29,12 +35,23 @@ const CHANNEL_ID = 'peptide-reminders';
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
+let cachedNotifications: typeof NotificationsModule | undefined;
+
+/** Lazily load expo-notifications. Only call this after an `isExpoGo` early-return. */
+function getNotifications(): typeof NotificationsModule {
+  if (!cachedNotifications) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    cachedNotifications = require('expo-notifications');
+  }
+  return cachedNotifications as typeof NotificationsModule;
+}
+
 let handlerConfigured = false;
 
 export function configureNotificationHandler(): void {
   if (isExpoGo || handlerConfigured) return;
   handlerConfigured = true;
-  Notifications.setNotificationHandler({
+  getNotifications().setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
       shouldShowList: true,
@@ -46,6 +63,7 @@ export function configureNotificationHandler(): void {
 
 export async function ensureAndroidChannel(): Promise<void> {
   if (isExpoGo || Platform.OS !== 'android') return;
+  const Notifications = getNotifications();
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
     name: 'Dose reminders',
     importance: Notifications.AndroidImportance.HIGH,
@@ -59,7 +77,7 @@ export type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unsupport
 
 export async function getPermissionState(): Promise<PermissionState> {
   if (isExpoGo || Platform.OS === 'web') return 'unsupported';
-  const settings = await Notifications.getPermissionsAsync();
+  const settings = await getNotifications().getPermissionsAsync();
   if (settings.granted) return 'granted';
   if (settings.canAskAgain) return 'undetermined';
   return 'denied';
@@ -67,6 +85,7 @@ export async function getPermissionState(): Promise<PermissionState> {
 
 export async function requestPermission(): Promise<PermissionState> {
   if (isExpoGo || Platform.OS === 'web') return 'unsupported';
+  const Notifications = getNotifications();
   const existing = await Notifications.getPermissionsAsync();
   if (existing.granted) return 'granted';
   const result = await Notifications.requestPermissionsAsync({
@@ -140,6 +159,7 @@ export async function syncReminders(
   const permission = await getPermissionState();
   if (permission !== 'granted') return { scheduled: 0, skippedPast: 0, truncated: false };
 
+  const Notifications = getNotifications();
   await Notifications.cancelAllScheduledNotificationsAsync();
   await ensureAndroidChannel();
 
@@ -180,11 +200,11 @@ export async function syncReminders(
 
 export async function cancelAllReminders(): Promise<void> {
   if (isExpoGo || Platform.OS === 'web') return;
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  await getNotifications().cancelAllScheduledNotificationsAsync();
 }
 
 export async function pendingReminderCount(): Promise<number> {
   if (isExpoGo || Platform.OS === 'web') return 0;
-  const pending = await Notifications.getAllScheduledNotificationsAsync();
+  const pending = await getNotifications().getAllScheduledNotificationsAsync();
   return pending.length;
 }
