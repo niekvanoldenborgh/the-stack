@@ -30,7 +30,12 @@ const ROOT = new URL('../dist/', import.meta.url).pathname;
 // included) already export `PORT` for their own listener, and picking that up
 // silently would collide with it instead of the intended dev machine port.
 const PORT = Number(process.env.PREVIEW_PORT) || 4300;
-const HOST = '127.0.0.1';
+// Defaults to loopback so nothing is exposed by accident. Reviewers running
+// inside a container who reach the app via a *mapped/published* port must set
+// PREVIEW_HOST=0.0.0.0 — a 127.0.0.1 listener is invisible to Docker's port
+// publish. Leave it unset when forwarding the port (ssh -L / kubectl
+// port-forward / VS Code remote), which tunnels to loopback and works as-is.
+const HOST = process.env.PREVIEW_HOST || '127.0.0.1';
 
 // Marker path the phone-frame wrapper points its iframe at. Asset URLs in
 // `dist/index.html` are root-absolute (e.g. "/_expo/static/..."), so serving
@@ -176,7 +181,9 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  const url = `http://${HOST}:${PORT}`;
+  // When bound to 0.0.0.0 the wildcard address isn't directly openable; point
+  // the reviewer at a real hostname they can click instead.
+  const url = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
   console.log(`\nThe Stack — reviewer preview\n`);
   console.log(`  ${url}\n`);
   console.log(`Opens straight into a ${DEVICE_WIDTH}×${DEVICE_HEIGHT} phone frame — no DevTools needed.`);
