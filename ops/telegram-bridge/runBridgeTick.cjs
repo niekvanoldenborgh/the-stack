@@ -28,6 +28,17 @@ async function runBridgeTick({ env = process.env, fetchImpl = fetch, storePath }
 }
 
 if (require.main === module) {
+  // cron invokes this with a bare environment, so `.env` sitting beside this
+  // script is never loaded by the shell — load it ourselves from the
+  // script's own directory (not cwd) so `node runBridgeTick.cjs` works
+  // regardless of where cron's `cd` lands. A missing `.env` is a silent
+  // no-op: env may already be supplied by the process environment directly.
+  try {
+    process.loadEnvFile(require('node:path').join(__dirname, '.env'));
+  } catch {
+    // no .env present — fall through to process.env as-is
+  }
+
   runBridgeTick().catch((err) => {
     console.error('[telegram-bridge] tick failed', err);
     process.exit(1);
