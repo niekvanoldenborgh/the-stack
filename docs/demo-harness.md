@@ -5,20 +5,116 @@ a non-technical reviewer can open it in a browser and click through all five tab
 with charts, schedules and history already rendering — no onboarding, no data
 entry.
 
-## How to run
+## Reviewing? Use `npm run preview`
+
+```bash
+npm run preview
+```
+
+This is the one-command path for a non-technical reviewer. It builds a static,
+demo-seeded web export and serves it on a fixed local URL:
+
+```
+> EXPO_PUBLIC_DEMO=1 expo export --platform web && node scripts/serve-preview.mjs
+...
+The Stack — reviewer preview
+
+  http://127.0.0.1:4300
+
+Open that URL in a browser. Ctrl+C to stop.
+```
+
+Open the printed URL. There is nothing else to start, no browser to
+auto-launch, no dev server to keep alive — `dist/` is a plain static build and
+`scripts/serve-preview.mjs` is a ~60-line, zero-dependency Node HTTP server
+(no `serve`/`http-server` package needed). Client-side routing means any path
+falls back to the app shell, so refreshing or deep-linking into a tab won't
+404.
+
+If port 4300 is taken, override it: `PREVIEW_PORT=4301 npm run preview` (don't
+use the plain `PORT` env var — some hosts already reserve it for their own
+listener, which is exactly the collision this avoids).
+
+This is why `npm run preview` is preferred over `npm run demo` for review: it
+has nothing left to compile or bundle at review time, so there's no live Metro
+server, auto-opened browser or open port to fail on the reviewer's machine —
+see "Diagnosing `npm run demo` failures" below for the class of failure this
+sidesteps.
+
+### Does it actually render?
+
+Yes, for a normal foreground browser tab — but the check is worth spelling
+out because of an AGENTS.md gotcha: `useNativeDriver: true` no-ops on
+react-native-web, and this app's screen-entrance animation
+(`Reveal` in `src/ui/motion.tsx`) drives *opacity*, so a mishandled version of
+it would ship invisible content instead of a missing flourish.
+
+`Reveal` already guards this: if `document.hidden` is true (backgrounded/hidden
+tab — which is also how headless-browser checks without a focused page report
+themselves), it skips straight to `opacity: 1` instead of waiting on a
+`requestAnimationFrame` that a hidden tab will never fire. In a normal,
+focused reviewer tab the entrance animation runs and settles within ~1.1s
+(420ms base + up to 660ms of stagger) — so if you're scripting a screenshot
+against the preview, wait for that before capturing, or the shell will be mid
+fade-in rather than actually blank.
+
+Verified for this change:
+- `curl` against the served preview returns `200` for `/`, the JS entry bundle,
+  and an arbitrary unmatched path (SPA fallback) — confirmed with the exact
+  `EXPO_PUBLIC_DEMO=1 expo export` output used here.
+- Read-through of `Reveal`'s `document.hidden` guard against the AGENTS.md
+  gotcha it's meant to cover — it resolves immediately when hidden, so the
+  headless-tab failure mode it warns about doesn't reproduce here.
+- A pixel screenshot via headless Chromium was **not** obtainable in this dev
+  sandbox specifically — Playwright's Chromium downloads fine, but launching it
+  needs system shared libraries (`libglib-2.0` and friends) that require root
+  to install here, and this sandbox has no root/sudo. If you need a screenshot
+  as proof for a PR, run `npx playwright install --with-deps chromium` once on
+  a machine where that's available, then navigate to the `npm run preview` URL.
+
+## Running it live instead (dev use, not reviewer use)
 
 ```bash
 npm run demo
 ```
 
-That runs `EXPO_PUBLIC_DEMO=1 expo start --web`. When the browser opens, the app
-skips onboarding and lands straight in the tabs, pre-seeded.
+That runs `EXPO_PUBLIC_DEMO=1 expo start --web` — a live Metro dev server with
+hot reload. Useful while developing the seed itself; not recommended for
+handing to a reviewer, since it needs a free port, a browser Metro can open,
+and a dev server that stays running for the whole review.
 
 To view the same seeded state on a device/simulator instead of the browser:
 
 ```bash
 EXPO_PUBLIC_DEMO=1 npx expo start        # then press i (iOS), a (Android), or scan the QR in Expo Go
 ```
+
+### Diagnosing `npm run demo` failures
+
+If `npm run demo` (or plain `expo start`) dies immediately with something like:
+
+```
+Error: EACCES: permission denied, open '.expo/dev/logs/start.log'
+```
+
+that's `expo start` trying to append to a log file left behind, owned by a
+different user (commonly: it — or a container setup step — ran once as
+`root`, and every later run is a non-root user that can't write to a
+root-owned file under `.expo/`). Confirm with `stat .expo/dev/logs/start.log`
+and compare the owner to `whoami`.
+
+Fix by removing the stale, wrongly-owned log (or the whole cache directory,
+which regenerates automatically):
+
+```bash
+rm -rf .expo/dev/logs   # or: rm -rf .expo
+```
+
+If you don't have permission to remove it either, that confirms the same root
+cause — ask whoever has root on that machine to `chown` `.expo/` back to your
+user, or just use `npm run preview`, which never touches `.expo/dev/logs/` (it
+only runs `expo export`, which logs to `.expo/dev/logs/export.log`, a separate
+file) and so isn't affected by this at all.
 
 ## What gets seeded
 

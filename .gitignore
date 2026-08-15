@@ -1,0 +1,3 @@
+# Web export output for `npm run preview` (scripts/serve-preview.mjs) — a
+# rebuildable artifact, not source.
+/dist/
