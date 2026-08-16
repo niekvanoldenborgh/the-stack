@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { getPeptide, PEPTIDES, searchPeptides } from '../src/domain/peptides';
 import type { StackItem } from '../src/domain/types';
@@ -19,9 +19,10 @@ import {
   Screen,
   Small,
   Spacer,
+  TextField,
 } from '../src/ui/components';
 import { SafetyReportView } from '../src/ui/SafetyReport';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, fonts, evidenceColor, radius, spacing, typography } from '../src/ui/theme';
+import { EVIDENCE_LABELS, LEGAL_LABELS, colors, fonts, evidenceColor, radius, spacing } from '../src/ui/theme';
 
 export default function BuilderScreen() {
   const router = useRouter();
@@ -92,13 +93,7 @@ export default function BuilderScreen() {
       </Small>
 
       <Spacer size={spacing.lg} />
-      <TextInput
-        value={name}
-        onChangeText={setName}
-        placeholder="Stack name"
-        placeholderTextColor={colors.textFaint}
-        style={styles.input}
-      />
+      <TextField value={name} onChangeText={setName} placeholder="Stack name" />
 
       {selected.length > 0 && safety && band ? (
         <View style={{ marginTop: spacing.xl }}>
@@ -117,12 +112,10 @@ export default function BuilderScreen() {
       <Caption color={colors.textMuted} style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
         Choose compounds
       </Caption>
-      <TextInput
+      <TextField
         value={query}
         onChangeText={setQuery}
         placeholder="Search"
-        placeholderTextColor={colors.textFaint}
-        style={styles.input}
         autoCorrect={false}
         clearButtonMode="while-editing"
       />
@@ -187,16 +180,6 @@ export default function BuilderScreen() {
 }
 
 const styles = StyleSheet.create({
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md + 2,
-    color: colors.text,
-    ...typography.body,
-  },
   evidenceTag: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,

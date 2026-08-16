@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { GOALS, HEALTH_FLAGS } from '../../src/domain/goals';
 import { PEPTIDES, searchPeptides } from '../../src/domain/peptides';
@@ -35,6 +35,7 @@ import {
   Screen,
   Small,
   Spacer,
+  TextField,
   Title,
   Toggle,
 } from '../../src/ui/components';
@@ -477,12 +478,10 @@ export default function Onboarding() {
               action={currentPeptides.length > 0 ? <Badge label={`${currentPeptides.length} selected`} tone="accent" /> : undefined}
               last
             >
-              <TextInput
+              <TextField
                 value={currentQuery}
                 onChangeText={setCurrentQuery}
                 placeholder="Search compounds"
-                placeholderTextColor={colors.textFaint}
-                style={styles.input}
                 autoCorrect={false}
                 clearButtonMode="while-editing"
               />
@@ -712,16 +711,3 @@ function DisclaimerStep({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md + 2,
-    color: colors.text,
-    ...typography.body,
-  },
-});
