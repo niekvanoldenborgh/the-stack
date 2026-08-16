@@ -38,7 +38,8 @@ See THEA-42 (parent: THEA-37 Design) for the sourcing pass this records.
 - **Attribution status:** none required; none given
 - **Recolor:** every swappable theme fill — the mirror's
   `var(--primary-svg-color)` marker plus any other non-neutral, non-skin-tone
-  literal fill — was mapped to the single brand accent `#C9F24D`. Structural
+  literal fill — was mapped to the single brand accent `#0F766E` (teal,
+  THEA-56 direction A; was `#C9F24D` prior to that pass). Structural
   ink (`#2f2e41` / `#3f3d56`), neutral greys and the inclusive skin-tone
   palette (`#a0616a`, `#ffb8b8`, …) were left untouched, so recoloring never
   erases a figure's skin tone. Optimized with `svgo --multipass` (~30-35%
@@ -83,7 +84,17 @@ ready for those screens' `EmptyState` call sites once that work lands.
   only, per AGENTS.md ("adapt layout from a kit, never its palette"). No
   assets extracted from these; nothing to credit.
 
-## Fonts — no change
+## Fonts
 
-IBM Plex Sans (SIL OFL), already shipped. Unchanged by this pass — see
-AGENTS.md for the per-weight import rule.
+- **Inter** (400/600/700) — sans body/heading face, replacing Bricolage
+  Grotesque + IBM Plex Sans as of THEA-56 direction A.
+  - **Source:** https://rsms.me/inter via the `@expo-google-fonts/inter`
+    npm package.
+  - **License:** SIL Open Font License 1.1 — free for commercial use, no
+    attribution required. Licence text ships in
+    `node_modules/@expo-google-fonts/inter/LICENSE_FONT`.
+  - **Attribution status:** none required; none given.
+- **IBM Plex Mono** — unchanged by this pass. Still the only mono face,
+  used for quantities/units (see AGENTS.md for the per-weight import rule).
+- **Bricolage Grotesque** — fully removed by THEA-56 direction A; no
+  longer shipped or imported.
