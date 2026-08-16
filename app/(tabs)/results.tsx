@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   CUSTOM_METRIC_ID,
@@ -29,6 +29,7 @@ import {
   Small,
   Spacer,
   StatTile,
+  TextField,
 } from '../../src/ui/components';
 import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
 import { colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
@@ -338,19 +339,15 @@ function GoalTargetEditor({
   if (open) {
     return (
       <View>
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            keyboardType="decimal-pad"
-            placeholder={`Target value${descriptor.unit ? ` (${descriptor.unit})` : ''}`}
-            placeholderTextColor={colors.textFaint}
-            returnKeyType="done"
-            onSubmitEditing={save}
-          />
-          {descriptor.unit ? <Small style={{ marginLeft: spacing.sm }}>{descriptor.unit}</Small> : null}
-        </View>
+        <TextField
+          value={text}
+          onChangeText={setText}
+          keyboardType="decimal-pad"
+          placeholder={`Target value${descriptor.unit ? ` (${descriptor.unit})` : ''}`}
+          returnKeyType="done"
+          onSubmitEditing={save}
+          suffix={descriptor.unit ? <Small style={{ marginLeft: spacing.sm }}>{descriptor.unit}</Small> : undefined}
+        />
         <Spacer size={spacing.sm} />
         <Row gap={spacing.sm}>
           <Button label="Save target" onPress={save} disabled={!valid} style={{ flex: 1 }} />
@@ -569,19 +566,15 @@ function AddForm({
       {descriptor.kind === 'scale' ? (
         <ScaleField value={rating} onChange={setRating} />
       ) : (
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            keyboardType="decimal-pad"
-            placeholder={`Value${descriptor.unit ? ` (${descriptor.unit})` : ''}`}
-            placeholderTextColor={colors.textFaint}
-            returnKeyType="done"
-            onSubmitEditing={save}
-          />
-          {descriptor.unit ? <Small style={{ marginLeft: spacing.sm }}>{descriptor.unit}</Small> : null}
-        </View>
+        <TextField
+          value={text}
+          onChangeText={setText}
+          keyboardType="decimal-pad"
+          placeholder={`Value${descriptor.unit ? ` (${descriptor.unit})` : ''}`}
+          returnKeyType="done"
+          onSubmitEditing={save}
+          suffix={descriptor.unit ? <Small style={{ marginLeft: spacing.sm }}>{descriptor.unit}</Small> : undefined}
+        />
       )}
       <Spacer size={spacing.md} />
       <Row gap={spacing.sm}>
@@ -706,38 +699,17 @@ function CustomMeasureSection({ onAdd }: { onAdd: (entry: Omit<Measurement, 'id'
       <Small>Any other measure you want to follow — energy, mood, a lift, a lab value.</Small>
       {open ? (
         <View>
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              value={label}
-              onChangeText={setLabel}
-              placeholder="Name (e.g. Resting heart rate)"
-              placeholderTextColor={colors.textFaint}
-            />
-          </View>
+          <TextField value={label} onChangeText={setLabel} placeholder="Name (e.g. Resting heart rate)" />
           <Spacer size={spacing.sm} />
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              value={unit}
-              onChangeText={setUnit}
-              placeholder="Unit (optional, e.g. bpm)"
-              placeholderTextColor={colors.textFaint}
-              autoCapitalize="none"
-            />
-          </View>
+          <TextField value={unit} onChangeText={setUnit} placeholder="Unit (optional, e.g. bpm)" autoCapitalize="none" />
           <Spacer size={spacing.sm} />
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              value={text}
-              onChangeText={setText}
-              keyboardType="decimal-pad"
-              placeholder="Value"
-              placeholderTextColor={colors.textFaint}
-              onSubmitEditing={save}
-            />
-          </View>
+          <TextField
+            value={text}
+            onChangeText={setText}
+            keyboardType="decimal-pad"
+            placeholder="Value"
+            onSubmitEditing={save}
+          />
           <Spacer size={spacing.md} />
           <DateField date={date} onChange={setDate} />
           <Spacer size={spacing.md} />
@@ -754,21 +726,6 @@ function CustomMeasureSection({ onAdd }: { onAdd: (entry: Omit<Measurement, 'id'
 }
 
 const styles = StyleSheet.create({
-  inputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    ...typography.body,
-    color: colors.text,
-    backgroundColor: colors.surfaceHigh,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.borderBright,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
   stepButton: {
     width: 40,
     height: 40,

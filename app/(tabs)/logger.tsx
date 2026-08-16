@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getPeptide } from '../../src/domain/peptides';
 import { SEVERITY_MAX, SEVERITY_MIN, SIDE_EFFECT_OPTIONS, severityBand } from '../../src/domain/sideEffects';
@@ -21,6 +21,7 @@ import {
   Screen,
   Small,
   Spacer,
+  TextField,
 } from '../../src/ui/components';
 import { List, ListItem, Section } from '../../src/ui/primitives';
 import { Segmented } from '../../src/ui/schedule';
@@ -214,12 +215,10 @@ function InjectionLogger() {
           />
         ) : (
           <View>
-            <TextInput
+            <TextField
               value={search}
               onChangeText={setSearch}
               placeholder={`Search ${stackPeptides.length} compound${stackPeptides.length === 1 ? '' : 's'} in your stack`}
-              placeholderTextColor={colors.textFaint}
-              style={styles.input}
               autoCorrect={false}
             />
             {results.length > 0 ? (
@@ -236,13 +235,12 @@ function InjectionLogger() {
       {/* Dose — user entered -------------------------------------------------- */}
       <Section title="Dose you injected" gap={spacing.md}>
         <Row gap={spacing.sm} align="center">
-          <TextInput
+          <TextField
             value={doseValue}
             onChangeText={setDoseValue}
             keyboardType="decimal-pad"
             placeholder="0"
-            placeholderTextColor={colors.textFaint}
-            style={[styles.input, { flex: 1 }]}
+            style={{ flex: 1 }}
           />
           <Row gap={spacing.xs}>
             {DOSE_UNITS.map((u) => {
@@ -280,30 +278,24 @@ function InjectionLogger() {
             } (${selectedPeptide.sources[0] ?? 'compound reference'}). This is logged as entered — nothing here is blocked or corrected.`}
           </Callout>
         ) : null}
-        <View>
-          <Caption color={colors.textFaint}>Amount drawn (syringe units, optional)</Caption>
-          <Spacer size={spacing.xs} />
-          <TextInput
-            value={drawn}
-            onChangeText={setDrawn}
-            keyboardType="decimal-pad"
-            placeholder="e.g. 10"
-            placeholderTextColor={colors.textFaint}
-            style={styles.input}
-          />
-        </View>
+        <TextField
+          label="Amount drawn (syringe units, optional)"
+          value={drawn}
+          onChangeText={setDrawn}
+          keyboardType="decimal-pad"
+          placeholder="e.g. 10"
+        />
       </Section>
 
       {/* When & where --------------------------------------------------------- */}
       <Section title="When & where" gap={spacing.lg}>
         <Row justify="space-between" align="center">
           <Caption color={colors.textMuted}>Time</Caption>
-          <TextInput
+          <TextField
             value={time}
             onChangeText={setTime}
             placeholder="HH:mm"
-            placeholderTextColor={colors.textFaint}
-            style={[styles.input, { width: 120 }]}
+            style={{ width: 120 }}
           />
         </Row>
 
@@ -328,12 +320,10 @@ function InjectionLogger() {
 
       {/* Notes + save ----------------------------------------------------------- */}
       <Section title="Notes" gap={spacing.md}>
-        <TextInput
+        <TextField
           value={note}
           onChangeText={setNote}
           placeholder="Anything worth remembering (optional)"
-          placeholderTextColor={colors.textFaint}
-          style={[styles.input, styles.multiline]}
           multiline
         />
         <Button label="Log injection" onPress={save} disabled={!canSave} />
@@ -497,17 +487,12 @@ function SideEffectLogger() {
             })}
           </Row>
         </View>
-        <View>
-          <Caption color={colors.textFaint}>Something else (optional)</Caption>
-          <Spacer size={spacing.xs} />
-          <TextInput
-            value={other}
-            onChangeText={setOther}
-            placeholder="Other symptom"
-            placeholderTextColor={colors.textFaint}
-            style={styles.input}
-          />
-        </View>
+        <TextField
+          label="Something else (optional)"
+          value={other}
+          onChangeText={setOther}
+          placeholder="Other symptom"
+        />
       </Section>
 
       <Section title="How bad, overall?">
@@ -517,12 +502,10 @@ function SideEffectLogger() {
       </Section>
 
       <Section title="Notes" gap={spacing.md}>
-        <TextInput
+        <TextField
           value={note}
           onChangeText={setNote}
           placeholder="Context — timing, meals, dose changes (optional)"
-          placeholderTextColor={colors.textFaint}
-          style={[styles.input, styles.multiline]}
           multiline
         />
         <Button label="Log how you feel" onPress={save} disabled={!canSave} />
@@ -594,30 +577,22 @@ function ReconstitutionCalculator() {
       </Small>
       <Spacer size={spacing.md} />
       <Row gap={spacing.sm} align="center">
-        <View style={{ flex: 1 }}>
-          <Caption color={colors.textFaint}>Peptide in vial (mg)</Caption>
-          <Spacer size={spacing.xs} />
-          <TextInput
-            value={vialMg}
-            onChangeText={setVialMg}
-            keyboardType="decimal-pad"
-            placeholder="e.g. 5"
-            placeholderTextColor={colors.textFaint}
-            style={styles.input}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Caption color={colors.textFaint}>Bac. water (mL)</Caption>
-          <Spacer size={spacing.xs} />
-          <TextInput
-            value={bacMl}
-            onChangeText={setBacMl}
-            keyboardType="decimal-pad"
-            placeholder="e.g. 2"
-            placeholderTextColor={colors.textFaint}
-            style={styles.input}
-          />
-        </View>
+        <TextField
+          label="Peptide in vial (mg)"
+          value={vialMg}
+          onChangeText={setVialMg}
+          keyboardType="decimal-pad"
+          placeholder="e.g. 5"
+          style={{ flex: 1 }}
+        />
+        <TextField
+          label="Bac. water (mL)"
+          value={bacMl}
+          onChangeText={setBacMl}
+          keyboardType="decimal-pad"
+          placeholder="e.g. 2"
+          style={{ flex: 1 }}
+        />
       </Row>
 
       {conc ? (
@@ -630,13 +605,12 @@ function ReconstitutionCalculator() {
       <Caption color={colors.textFaint}>Your dose (optional — to see units to draw)</Caption>
       <Spacer size={spacing.xs} />
       <Row gap={spacing.sm} align="center">
-        <TextInput
+        <TextField
           value={doseValue}
           onChangeText={setDoseValue}
           keyboardType="decimal-pad"
           placeholder="0"
-          placeholderTextColor={colors.textFaint}
-          style={[styles.input, { flex: 1 }]}
+          style={{ flex: 1 }}
         />
         <Row gap={spacing.xs}>
           {(['mcg', 'mg'] as const).map((u) => {
@@ -676,20 +650,6 @@ function ReconstitutionCalculator() {
 }
 
 const styles = StyleSheet.create({
-  input: {
-    backgroundColor: colors.surfaceHigh,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.borderBright,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md + 2,
-    color: colors.text,
-    ...typography.body,
-  },
-  multiline: {
-    minHeight: 72,
-    textAlignVertical: 'top',
-  },
   unitPill: {
     minWidth: 44,
     alignItems: 'center',

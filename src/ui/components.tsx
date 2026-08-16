@@ -1,12 +1,14 @@
-import { Children, Fragment, isValidElement, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type StyleProp,
+  type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -426,6 +428,88 @@ export function Toggle({
   );
 }
 
+/**
+ * One field anatomy for every hand-typed input in the app: label above,
+ * a chrome box that answers focus/error with a border colour (never fill
+ * alone — colour is load-bearing here, so a state also has to survive
+ * losing that colour), optional trailing slot for a unit or an inline
+ * control, and helper/error text below. Replaces four near-duplicate
+ * `styles.input` blocks (logger, results, builder, onboarding) that had
+ * quietly drifted apart on border width and colour.
+ */
+export function TextField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  helper,
+  error,
+  leading,
+  suffix,
+  style,
+  inputStyle,
+  ...inputProps
+}: {
+  label?: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+  /** Shown below the field when there's no error. */
+  helper?: string;
+  /** Shown below the field instead of `helper`, and tints the border. */
+  error?: string;
+  /** Leading content inside the field chrome — a search icon, typically. */
+  leading?: ReactNode;
+  /** Trailing content inside the field chrome — a unit label, a small control. */
+  suffix?: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  inputStyle?: StyleProp<TextStyle>;
+} & Pick<
+  TextInputProps,
+  | 'keyboardType'
+  | 'autoCorrect'
+  | 'autoCapitalize'
+  | 'autoComplete'
+  | 'secureTextEntry'
+  | 'multiline'
+  | 'returnKeyType'
+  | 'onSubmitEditing'
+  | 'maxLength'
+  | 'clearButtonMode'
+>) {
+  const [focused, setFocused] = useState(false);
+  const borderColor = error ? colors.critical : focused ? colors.accent : colors.borderBright;
+
+  return (
+    <View style={style}>
+      {label ? <Caption color={colors.textMuted} style={{ marginBottom: spacing.xs }}>{label}</Caption> : null}
+      <Row
+        gap={spacing.sm}
+        align={inputProps.multiline ? 'flex-start' : 'center'}
+        style={[styles.fieldWrap, { borderColor }, inputProps.multiline ? styles.fieldWrapMultiline : null]}
+      >
+        {leading}
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textFaint}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={[typography.body, { color: colors.text, flex: 1 }, inputProps.multiline ? styles.fieldInputMultiline : null, inputStyle]}
+          {...inputProps}
+        />
+        {suffix}
+      </Row>
+      {error ? (
+        <Small style={{ marginTop: spacing.xs, color: colors.critical }}>{error}</Small>
+      ) : helper ? (
+        <Small style={{ marginTop: spacing.xs }}>{helper}</Small>
+      ) : null}
+    </View>
+  );
+}
+
 export function ProgressBar({ value, tone = 'accent' }: { value: number; tone?: SeverityTone }) {
   const { fg } = toneColors(tone);
   const pct = Math.max(0, Math.min(100, value));
@@ -566,6 +650,20 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
     marginVertical: spacing.md,
+  },
+  fieldWrap: {
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md + 2,
+  },
+  fieldWrapMultiline: {
+    paddingVertical: spacing.md,
+  },
+  fieldInputMultiline: {
+    minHeight: 72,
+    textAlignVertical: 'top',
   },
   button: {
     paddingVertical: spacing.md + 2,
