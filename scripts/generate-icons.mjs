@@ -17,7 +17,7 @@ const root = join(here, '..');
 const assets = join(root, 'assets');
 
 const BG = '#0A0A0C';
-const ACCENT = '#C9F24D';
+const ACCENT = '#0F766E';
 
 const source = await readFile(join(assets, 'brand', 'logo.svg'), 'utf8');
 
@@ -25,7 +25,7 @@ const source = await readFile(join(assets, 'brand', 'logo.svg'), 'utf8');
 function monochrome(svg, color) {
   return svg
     .replace(/fill="url\(#top\)"/g, `fill="${color}"`)
-    .replace(/fill="#C9F24D"/g, `fill="${color}"`)
+    .replace(/fill="#0F766E"/g, `fill="${color}"`)
     .replace(/opacity="[\d.]+"/g, '');
 }
 
