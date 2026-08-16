@@ -4,23 +4,19 @@ import { View } from 'react-native';
 
 import { METRIC_BY_ID } from '../../src/domain/metrics';
 import { getPeptide } from '../../src/domain/peptides';
-import type { DoseLog, GoalTarget, Measurement, Peptide, PhaseKind, Stack } from '../../src/domain/types';
+import type { DoseLog, GoalTarget, InjectionLog, Measurement, PhaseKind, Stack } from '../../src/domain/types';
 import { buildCyclePhases, cyclePlanProgressPct, groupPhasesByPeptide, summariseCycle } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
-import { buildLevelSeries, peptideHasLevelModel, pkShortHalfLifeClearance, type LevelSeriesResult } from '../../src/engine/pk';
 import { formatMetricValue, goalTargetProgressPct, summariseMeasurements } from '../../src/engine/progress';
-import { formatShort, relativeLabel, timeToMinutes, today } from '../../src/lib/date';
+import { relativeLabel, timeToMinutes, today } from '../../src/lib/date';
 import { useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
-import { LevelCurve } from '../../src/ui/charts';
 import {
   Badge,
   Button,
   Caption,
   Data,
   Display,
-  Divider,
   EmptyState,
-  Heading,
   ProgressBar,
   Row,
   Screen,
@@ -28,15 +24,15 @@ import {
   Spacer,
 } from '../../src/ui/components';
 import { RouteIcon } from '../../src/ui/icons';
-import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
+import { FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
 import { colors, spacing, type SeverityTone } from '../../src/ui/theme';
 
 /**
- * Summary (page 1) — THEA-8, redesigned THEA-38, THEA-40.
+ * Summary (page 1) — THEA-8, redesigned THEA-38, THEA-40, THEA-49.
  *
  * One focal block — the next scheduled injection — carries the top of the
- * screen; everything else (estimated levels, current stack) steps down into
- * borderless, tone-shifted sections below it. The old four-equal-cards
+ * screen; everything else (today's to-do list, current stack) steps down
+ * into borderless, tone-shifted sections below it. The old four-equal-cards
  * layout and its up/down reorder toggle are gone: this is a fixed hierarchy
  * now, not a shelf of homogeneous widgets.
  *
@@ -49,11 +45,11 @@ import { colors, spacing, type SeverityTone } from '../../src/ui/theme';
  * the single target the user set on Results, not a dashboard — the target
  * number is entirely theirs, same as everywhere else in this app.
  *
- * The levels section is the only part of this screen with hard rules — see
- * the PK spec's no-dosage boundary (§3). It reads exactly what §1–§2 hand it
- * back from `src/engine/pk.ts` and never computes a dose of its own. The
- * short disclaimer under each chart stays visible unconditionally; only the
- * longer methodology note is behind a tap (`Disclosure`).
+ * `TodayInjectionsSection` replaces the old "estimated medication levels"
+ * block (THEA-6, THEA-49): a plain checklist of today's schedule, ticked
+ * strictly by whether a matching log exists — see `isLoggedToday` below.
+ * The PK levels engine (`src/engine/pk.ts`) is untouched and still tested;
+ * this screen just no longer renders it.
  */
 
 export default function SummaryScreen() {
@@ -64,7 +60,6 @@ export default function SummaryScreen() {
   const injectionLogs = useAppStore((s) => s.injectionLogs);
   const measurements = useAppStore((s) => s.measurements);
   const settings = useAppStore((s) => s.settings);
-  const setSetting = useAppStore((s) => s.setSetting);
   const upcomingDoses = useUpcomingDoses(14);
 
   if (!profile) {
@@ -98,13 +93,7 @@ export default function SummaryScreen() {
 
       <GoalProgressSection target={profile.goalTarget} measurements={measurements} />
 
-      <LevelsSection
-        stack={stack}
-        injectionLogs={injectionLogs}
-        weightKg={profile.weightKg}
-        acknowledgedAt={settings.pkModalAcknowledgedAt}
-        onAcknowledge={() => setSetting('pkModalAcknowledgedAt', new Date().toISOString())}
-      />
+      <TodayInjectionsSection upcomingDoses={upcomingDoses} injectionLogs={injectionLogs} />
 
       <StackSection
         stack={stack}
@@ -229,200 +218,63 @@ function GoalProgressSection({ target, measurements }: { target?: GoalTarget; me
 }
 
 // ---------------------------------------------------------------------------
-// Estimated medication levels (THEA-6)
+// Today's injections — THEA-49
 // ---------------------------------------------------------------------------
 
-const PK_SHORT_DISCLAIMER = 'Estimate from population-average study data — not a measurement of your blood.';
-const PK_CAPTION =
-  "Modelled from the injections you logged, scaled to your body weight. Real levels vary between people, and vary a lot more if your vial's contents are not what the label says.";
+/**
+ * A row is ticked only because a matching `InjectionLog` exists for today —
+ * never by tapping it. The match is the same plain peptideId equality
+ * `src/engine/pk.ts` uses to pick a compound's own logs out of the list,
+ * extended with a same-day date check; no fuzzy time-window or dose-size
+ * heuristic. Ticking is a statement of fact ("you logged this"), not a
+ * to-do the user can fake, so `ListItem` gets no `onPress` here.
+ */
+function isLoggedToday(peptideId: string, injectionLogs: InjectionLog[], todayISO: string): boolean {
+  return injectionLogs.some((log) => log.peptideId === peptideId && log.date === todayISO);
+}
 
-function LevelsSection({
-  stack,
+function TodayInjectionsSection({
+  upcomingDoses,
   injectionLogs,
-  weightKg,
-  acknowledgedAt,
-  onAcknowledge,
 }: {
-  stack: Stack | null;
-  injectionLogs: Parameters<typeof buildLevelSeries>[1];
-  weightKg: number | undefined;
-  acknowledgedAt: string | undefined;
-  onAcknowledge: () => void;
+  upcomingDoses: ReturnType<typeof useUpcomingDoses>;
+  injectionLogs: InjectionLog[];
 }) {
-  const nowEpochHours = useMemo(() => Date.now() / 3_600_000, []);
+  const todayISO = today();
 
-  const rows = useMemo(() => {
-    if (!stack) return [];
-    const seen = new Set<string>();
-    const out: { peptide: Peptide; eligible: boolean; series: LevelSeriesResult | null }[] = [];
-    for (const item of stack.items) {
-      if (seen.has(item.peptideId)) continue;
-      seen.add(item.peptideId);
-      const peptide = getPeptide(item.peptideId);
-      if (!peptide) continue;
-      const eligible = peptideHasLevelModel(peptide);
-      out.push({
-        peptide,
-        eligible,
-        series: eligible ? buildLevelSeries(peptide, injectionLogs, weightKg, nowEpochHours) : null,
-      });
-    }
-    return out;
-  }, [stack, injectionLogs, weightKg, nowEpochHours]);
+  const rows = useMemo(
+    () =>
+      upcomingDoses
+        .filter((dose) => dose.date === todayISO)
+        .map((dose) => ({ dose, logged: isLoggedToday(dose.peptideId, injectionLogs, todayISO) })),
+    [upcomingDoses, injectionLogs, todayISO],
+  );
 
-  if (!stack) {
+  if (rows.length === 0) {
     return (
-      <Section title="Estimated medication levels">
-        <Small>No active stack — start one to see estimated levels here.</Small>
+      <Section title="Today's injections">
+        <Small>Nothing scheduled for today.</Small>
       </Section>
     );
   }
 
-  const withModel = rows.filter((r) => r.eligible);
-  const withoutModel = rows.filter((r) => !r.eligible);
-  const needsAcknowledgement = withModel.length > 0 && !acknowledgedAt;
-
   return (
-    <Section title="Estimated medication levels" gap={spacing.lg}>
-      {needsAcknowledgement ? (
-        <View>
-          <Small muted={false} style={{ color: colors.text }}>
-            This is a model, not a measurement — the population average on your logged injections and body weight. It
-            cannot tell you whether your dose is right, and we will never use it to suggest one.
-          </Small>
-          <Button label="I understand" onPress={onAcknowledge} style={{ marginTop: spacing.md }} />
-        </View>
-      ) : (
-        withModel.map((row) => <LevelChartCard key={row.peptide.id} peptide={row.peptide} series={row.series!} />)
-      )}
-
-      {withoutModel.map((row) => {
-        const clearsIn = pkShortHalfLifeClearance(row.peptide.id);
-        return (
-          <View key={row.peptide.id}>
-            <Heading>{row.peptide.name}</Heading>
-            <Small style={{ marginTop: spacing.xs }}>
-              {clearsIn
-                ? `Clears in ${clearsIn} — out of your system long before the next dose, so a level chart would be a ` +
-                  `flat line with a spike on it. What matters here is the response it triggers, not the peptide level.`
-                : `We only draw this chart where published human pharmacokinetic data exists — currently semaglutide and ` +
-                  `tirzepatide. Your injections are still logged and shown on the calendar.`}
-            </Small>
-          </View>
-        );
-      })}
+    <Section title="Today's injections">
+      <List>
+        {rows.map(({ dose, logged }) => {
+          const peptide = getPeptide(dose.peptideId);
+          return (
+            <ListItem
+              key={dose.id}
+              title={peptide?.name ?? dose.peptideId}
+              detail={`${formatDose(dose.dose)} · ${dose.time}`}
+              checked={logged}
+            />
+          );
+        })}
+      </List>
     </Section>
   );
-}
-
-function LevelChartCard({ peptide, series }: { peptide: Peptide; series: LevelSeriesResult }) {
-  const hasPoints = series.points.length > 0;
-
-  const startLabel = hasPoints && series.anchorEpochHours !== null ? formatShort(epochHoursToISODate(series.anchorEpochHours)) : null;
-  const endLabel =
-    hasPoints && series.anchorEpochHours !== null
-      ? formatShort(epochHoursToISODate(series.anchorEpochHours + series.points[series.points.length - 1]!.hoursFromStart))
-      : null;
-
-  return (
-    <View>
-      <Heading>{peptide.name}</Heading>
-
-      {!hasPoints ? (
-        <Small style={{ marginTop: spacing.sm }}>No injections logged yet — log one on the Logger to see an estimate here.</Small>
-      ) : (
-        <>
-          <Spacer size={spacing.md} />
-          <LevelCurve points={series.points.map((p) => ({ value: p.pct, low: p.pctLow, high: p.pctHigh }))} />
-          <Row justify="space-between" style={{ marginTop: spacing.sm }}>
-            <Caption color={colors.textFaint}>{startLabel}</Caption>
-            <Caption color={colors.textFaint}>{endLabel}</Caption>
-          </Row>
-          <Spacer size={spacing.xs} />
-          <Caption color={colors.textFaint}>% of your predicted steady-state average</Caption>
-          {series.weightFallback ? (
-            <Small style={{ marginTop: spacing.sm }}>
-              No usable weight on file — using the {series.weightKgUsed} kg study-reference weight instead of yours.
-            </Small>
-          ) : null}
-        </>
-      )}
-
-      <Divider />
-      <Small muted={false} style={{ color: colors.text }}>
-        {PK_SHORT_DISCLAIMER}
-      </Small>
-      <Disclosure label="How this estimate is made" summary={PK_CAPTION}>
-        <PkInfoBody />
-      </Disclosure>
-    </View>
-  );
-}
-
-function PkInfoBody() {
-  return (
-    <View>
-      <Small muted={false} style={{ color: colors.text }}>{PK_CAPTION}</Small>
-
-      <Caption color={colors.textMuted} style={{ marginTop: spacing.lg }}>
-        How this estimate is made
-      </Caption>
-      <Small style={{ marginTop: spacing.sm }}>
-        We take the injections you logged and run them through a pharmacokinetic model built from published clinical-trial
-        data — the same kind of model used to choose the dosing intervals on the label. For semaglutide and tirzepatide,
-        the parameters come from peer-reviewed population analyses of thousands of trial participants. The only thing
-        about you that goes into it is your body weight, because that is the only personal factor those studies found to
-        have a meaningful effect.
-      </Small>
-
-      <Caption color={colors.textMuted} style={{ marginTop: spacing.lg }}>
-        What it is not
-      </Caption>
-      <Small style={{ marginTop: spacing.sm }}>
-        It is not a blood test. It is the average behaviour of a large group of people, drawn as if it were yours. Two
-        people at the same dose and the same weight can genuinely differ by 25% or more, and this chart cannot tell you
-        where in that spread you sit. Only a blood test can.
-      </Small>
-
-      <Caption color={colors.textMuted} style={{ marginTop: spacing.lg }}>
-        The biggest source of error is not the model
-      </Caption>
-      <Small style={{ marginTop: spacing.sm }}>
-        If your product did not come from a pharmacy, nobody has verified how much peptide is actually in the vial. If it
-        contains less than the label says — or more — this chart is wrong by that amount, and no amount of modelling can
-        detect it.
-      </Small>
-
-      <Caption color={colors.textMuted} style={{ marginTop: spacing.lg }}>
-        What this chart is for
-      </Caption>
-      <Small style={{ marginTop: spacing.sm }}>
-        Seeing the shape: how long a compound takes to build up, what a missed or late injection does to it, and how long
-        it stays in you after you stop. It is not for deciding a dose. We do not suggest doses.
-      </Small>
-
-      <Caption color={colors.textMuted} style={{ marginTop: spacing.lg }}>
-        Sources
-      </Caption>
-      <Small style={{ marginTop: spacing.sm }}>
-        Semaglutide: Carlsson Petri et al., Diabetes Ther 2018;9(4):1533–1547; Ozempic and Wegovy US prescribing
-        information, §12.3.
-      </Small>
-      <Small style={{ marginTop: spacing.xs }}>
-        Tirzepatide: Schneck &amp; Urva, CPT Pharmacometrics Syst Pharmacol 2024;13(3):494–503; Zepbound US prescribing
-        information, §12.3.
-      </Small>
-    </View>
-  );
-}
-
-/** Converts hours-since-epoch back to a local `YYYY-MM-DD`, for chart axis labels. */
-function epochHoursToISODate(hours: number): string {
-  const d = new Date(hours * 3_600_000);
-  const year = d.getFullYear();
-  const month = `${d.getMonth() + 1}`.padStart(2, '0');
-  const day = `${d.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
 
 // ---------------------------------------------------------------------------
