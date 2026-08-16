@@ -13,12 +13,28 @@ See THEA-42 (parent: THEA-37 Design) for the sourcing pass this records.
 
 ## Illustrations — unDraw
 
-- **Source:** https://undraw.co, pulled from the
+- **Source:** https://undraw.co. Raw SVG bytes were pulled via the
   [balazser/undraw-svg-collection](https://github.com/balazser/undraw-svg-collection)
-  mirror (raw SVGs, MIT-licensed packaging; the underlying artwork is unDraw's
-  own open license — free for commercial use, no attribution required)
-- **License:** unDraw open license (no attribution required); mirror
-  packaging is MIT
+  GitHub mirror as a sourcing convenience.
+- **License:** governed by unDraw's own artwork license
+  (https://undraw.co/license), *not* any license the mirror repo declares
+  for itself. Correction (THEA-43 audit): an earlier version of this entry
+  said the mirror's MIT license covered "packaging" only, implying the
+  artwork was separately unDraw-licensed. That undersold what the mirror
+  claims — its README states "The SVGs in this repository are provided
+  under the MIT License," i.e. MIT over the artwork files too. We don't
+  rely on that claim either way: a redistribution mirror can't unilaterally
+  relicense someone else's copyrighted illustrations by declaring its own
+  repo MIT, so the license that actually governs our use is unDraw's own,
+  quoted next.
+  unDraw's license grants "a nonexclusive, worldwide copyright license to
+  download, copy, modify, distribute, perform, and use the assets provided
+  from unDraw for free, including for commercial purposes," no attribution
+  required. It restricts using unDraw assets to replicate/compete with
+  unDraw, and restricts redistributing the illustrations as a standalone
+  pack — using individual illustrations inside this app's UI, as we do, is
+  the permitted case; reselling or repackaging the illustration set itself
+  is not. (It also bars AI/ML training use, not relevant here.)
 - **Attribution status:** none required; none given
 - **Recolor:** every swappable theme fill — the mirror's
   `var(--primary-svg-color)` marker plus any other non-neutral, non-skin-tone
