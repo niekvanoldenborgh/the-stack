@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -9,37 +10,47 @@ import {
   metricsForGoals,
   type MetricInputKind,
 } from '../../src/domain/metrics';
-import type { Measurement } from '../../src/domain/types';
+import type { DoseLog, Measurement, Stack } from '../../src/domain/types';
+import { generateSchedule } from '../../src/engine/cycle';
 import { seriesKey, summariseMeasurements, type MetricSummary } from '../../src/engine/progress';
 import { addDays, formatShort, relativeLabel, today } from '../../src/lib/date';
-import { useAppStore } from '../../src/store/useAppStore';
+import { selectAdherence, useActiveStack, useAppStore } from '../../src/store/useAppStore';
 import { Sparkbars } from '../../src/ui/charts';
 import {
-  Body,
   Button,
   Callout,
   Caption,
-  Card,
   Data,
   Display,
-  Divider,
   EmptyState,
-  Heading,
   Row,
   Screen,
   Small,
   Spacer,
+  StatTile,
 } from '../../src/ui/components';
+import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
 import { colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
 
 /**
- * Results — the goal tracker.
+ * Results — the goal tracker, redesigned THEA-38b.
  *
- * Surfaces a measure for each of the user's goals (bodyweight for fat loss, a
- * 1–5 rating for skin, top sets for strength …), charts what they log over
- * time and shows the change between the first and latest reading. It never
- * sets a target or judges a value: the app is not a clinician, so it reports
- * the numbers and leaves the meaning to the user.
+ * This is now the app's one coherent "how am I doing" surface: the overview
+ * stats that used to sit on Summary (adherence, active compounds, logged
+ * injections) live here instead, next to the measurements you log against
+ * your goals. Calendar keeps the day-to-day schedule; Analytics keeps the
+ * training-specific deep dive; this screen is where progress across all of it
+ * gets summarised.
+ *
+ * One measure — the first goal's — gets the `FocalMetric` treatment at the
+ * top of the screen. Everything else, including that measure's own chart and
+ * entry history, sits behind `Disclosure` rather than as an always-open card:
+ * the old layout put N identical bordered cards on screen at once regardless
+ * of how many goals were picked, which read as a wall of near-duplicate
+ * blocks rather than one screen with a point of view.
+ *
+ * It never sets a target or judges a value: the app is not a clinician, so it
+ * reports the numbers and leaves the meaning to the user.
  */
 
 interface Descriptor {
@@ -65,11 +76,36 @@ function valueLabel(value: number, d: Pick<Descriptor, 'kind' | 'unit' | 'precis
   return `${num} ${d.unit}`;
 }
 
+/** Splits a value into the pieces `FocalMetric` wants — a figure and a trailing unit. */
+function focalValue(value: number, d: Descriptor): { value: string; unit?: string } {
+  const num = formatNumber(value, d.precision);
+  if (d.kind === 'scale') return { value: num, unit: `/ ${SCALE_MAX}` };
+  if (!d.unit || d.unit === '%') return { value: d.unit === '%' ? `${num}%` : num };
+  return { value: num, unit: d.unit };
+}
+
+function changeLineText(descriptor: Descriptor, summary: MetricSummary): string {
+  const change = summary.change ?? 0;
+  const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
+  const magnitude = valueLabel(Math.abs(change), descriptor);
+  const since = formatShort(summary.points[0]!.date);
+  // Percentage is only meaningful for a measured quantity, not a 1–5 rating.
+  const pct =
+    descriptor.kind === 'number' && summary.changePct !== null
+      ? ` (${summary.changePct > 0 ? '+' : ''}${summary.changePct}%)`
+      : '';
+  return change === 0 ? `No change since ${since}` : `${arrow} ${magnitude}${pct} since ${since}`;
+}
+
 export default function ResultsScreen() {
+  const router = useRouter();
   const profile = useAppStore((s) => s.profile);
   const measurements = useAppStore((s) => s.measurements);
   const addMeasurement = useAppStore((s) => s.addMeasurement);
   const removeMeasurement = useAppStore((s) => s.removeMeasurement);
+  const stack = useActiveStack();
+  const doseLogs = useAppStore((s) => s.doseLogs);
+  const injectionLogs = useAppStore((s) => s.injectionLogs);
 
   const summaries = useMemo(() => summariseMeasurements(measurements), [measurements]);
   const summaryByKey = useMemo(() => new Map(summaries.map((s) => [s.key, s])), [summaries]);
@@ -103,7 +139,7 @@ export default function ResultsScreen() {
     const covered = new Set(goalDescriptors.map((d) => d.key));
 
     // Anything logged that isn't already surfaced by a goal — a metric outside
-    // the current goals, or a custom measure — still gets a card.
+    // the current goals, or a custom measure — still gets a row.
     const extra: Descriptor[] = summaries
       .filter((s) => !covered.has(s.key))
       .map((s) => {
@@ -122,6 +158,8 @@ export default function ResultsScreen() {
     return [...goalDescriptors, ...extra];
   }, [profile, summaries]);
 
+  const [primary, ...rest] = descriptors;
+
   if (!profile) {
     return (
       <Screen>
@@ -137,42 +175,69 @@ export default function ResultsScreen() {
     <Screen>
       <Spacer size={spacing.md} />
       <Caption color={colors.accent}>Progress</Caption>
-      <Display style={{ marginTop: spacing.sm }}>Results</Display>
+      <Display style={{ marginTop: spacing.sm, marginBottom: spacing.lg }}>Results</Display>
 
-      <Spacer size={spacing.lg} />
       <Callout tone="info" title="Your own measurements">
-        The app charts what you enter and shows the change between readings. It does not set targets or say what a value
-        should be — that is between you and a clinician.
+        The app charts what you enter and shows the change between readings. It does not set targets or say what a
+        value should be — that is between you and a clinician.
       </Callout>
+      <Spacer size={spacing.lg} />
 
-      {descriptors.map((descriptor) => (
-        <MetricCard
-          key={descriptor.key}
-          descriptor={descriptor}
-          summary={summaryByKey.get(descriptor.key)}
-          entries={entriesByKey.get(descriptor.key) ?? []}
+      {primary ? (
+        <PrimaryMetricSection
+          descriptor={primary}
+          summary={summaryByKey.get(primary.key)}
+          entries={entriesByKey.get(primary.key) ?? []}
           onAdd={addMeasurement}
           onRemove={removeMeasurement}
         />
-      ))}
+      ) : (
+        <Section tone={2}>
+          <Caption color={colors.accent}>Progress</Caption>
+          <Small style={{ marginTop: spacing.sm }}>
+            Pick a goal in onboarding to see a tracked measure here, or add a custom one below.
+          </Small>
+        </Section>
+      )}
 
-      <CustomCard onAdd={addMeasurement} />
+      <OverviewSection
+        stack={stack}
+        doseLogs={doseLogs}
+        injectionLogs={injectionLogs}
+        onOpenAnalytics={() => router.push('/analytics')}
+      />
 
-      <Spacer size={spacing.lg} />
-      <Body muted>
-        Everything here is what you logged. A gap in your readings shows up as a gap in the chart — nothing is filled in
-        for you.
-      </Body>
+      {rest.length > 0 ? (
+        <Section title="Other measures" gap={spacing.lg}>
+          {rest.map((d) => (
+            <MetricRow
+              key={d.key}
+              descriptor={d}
+              summary={summaryByKey.get(d.key)}
+              entries={entriesByKey.get(d.key) ?? []}
+              onAdd={addMeasurement}
+              onRemove={removeMeasurement}
+            />
+          ))}
+        </Section>
+      ) : null}
+
+      <CustomMeasureSection onAdd={addMeasurement} />
+
+      <Small style={{ marginTop: spacing.sm }}>
+        Everything here is what you logged. A gap in your readings shows up as a gap in the chart — nothing is filled
+        in for you.
+      </Small>
       <Spacer size={spacing.xxl} />
     </Screen>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Metric card
+// Primary metric — the one focal figure on this screen
 // ---------------------------------------------------------------------------
 
-function MetricCard({
+function PrimaryMetricSection({
   descriptor,
   summary,
   entries,
@@ -185,31 +250,73 @@ function MetricCard({
   onAdd: (entry: Omit<Measurement, 'id'>) => void;
   onRemove: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const latest = summary?.latest ?? null;
+  const figure = latest != null ? focalValue(latest, descriptor) : { value: '—' };
+  const changeText = summary && summary.change !== null && summary.first !== null ? changeLineText(descriptor, summary) : undefined;
+  const historySummary = entries.length > 0 ? `${entries.length} reading${entries.length === 1 ? '' : 's'} logged` : 'No readings yet';
+
+  return (
+    <Section tone={2} gap={spacing.lg}>
+      <FocalMetric eyebrow={descriptor.label} value={figure.value} unit={figure.unit} meta={changeText ?? descriptor.hint} />
+      <Disclosure label="History & log a reading" summary={historySummary}>
+        <MetricDetail descriptor={descriptor} summary={summary} entries={entries} onAdd={onAdd} onRemove={onRemove} />
+      </Disclosure>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Secondary metrics — one Disclosure row per measure
+// ---------------------------------------------------------------------------
+
+function MetricRow({
+  descriptor,
+  summary,
+  entries,
+  onAdd,
+  onRemove,
+}: {
+  descriptor: Descriptor;
+  summary?: MetricSummary;
+  entries: Measurement[];
+  onAdd: (entry: Omit<Measurement, 'id'>) => void;
+  onRemove: (id: string) => void;
+}) {
+  const summaryText =
+    summary?.latest != null
+      ? `${valueLabel(summary.latest, descriptor)} · latest${
+          summary.change !== null && summary.first !== null ? ` · ${changeLineText(descriptor, summary)}` : ''
+        }`
+      : 'No readings yet';
+
+  return (
+    <Disclosure label={descriptor.label} summary={summaryText}>
+      <MetricDetail descriptor={descriptor} summary={summary} entries={entries} onAdd={onAdd} onRemove={onRemove} />
+    </Disclosure>
+  );
+}
+
+/** Shared chart + recent entries + add-a-reading form, used by both the primary and secondary metrics. */
+function MetricDetail({
+  descriptor,
+  summary,
+  entries,
+  onAdd,
+  onRemove,
+}: {
+  descriptor: Descriptor;
+  summary?: MetricSummary;
+  entries: Measurement[];
+  onAdd: (entry: Omit<Measurement, 'id'>) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
   const hasData = Boolean(summary && summary.count >= 1);
 
   return (
-    <Card>
-      <Row justify="space-between" align="flex-start">
-        <View style={{ flex: 1, paddingRight: spacing.md }}>
-          <Heading>{descriptor.label}</Heading>
-          {descriptor.hint ? <Small style={{ marginTop: 2 }}>{descriptor.hint}</Small> : null}
-        </View>
-        {summary?.latest != null ? (
-          <View style={{ alignItems: 'flex-end' }}>
-            <Data>{valueLabel(summary.latest, descriptor)}</Data>
-            <Caption color={colors.textFaint}>Latest</Caption>
-          </View>
-        ) : null}
-      </Row>
-
-      {summary && summary.change !== null && summary.first !== null ? (
-        <ChangeLine descriptor={descriptor} summary={summary} />
-      ) : null}
-
+    <View>
       {hasData && summary ? (
         <>
-          <Spacer size={spacing.md} />
           <Sparkbars
             values={summary.points.map((p) => p.value)}
             accessibilityLabel={`${descriptor.label} over ${summary.count} reading${summary.count === 1 ? '' : 's'}: ${summary.points
@@ -222,67 +329,91 @@ function MetricCard({
           </Row>
         </>
       ) : (
-        <Small style={{ marginTop: spacing.md }}>No readings yet — add your first below.</Small>
+        <Small>No readings yet — add your first below.</Small>
       )}
 
       {entries.length > 0 ? (
-        <>
-          <Divider />
-          {entries.slice(0, 3).map((entry) => (
-            <Row key={entry.id} justify="space-between" style={{ marginBottom: spacing.xs }}>
-              <Small muted={false}>{relativeLabel(entry.date)}</Small>
-              <Row gap={spacing.md}>
-                <Data small color={colors.textMuted}>
-                  {valueLabel(entry.value, descriptor)}
-                </Data>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${descriptor.label} reading from ${formatShort(entry.date)}`}
-                  hitSlop={8}
-                  onPress={() => onRemove(entry.id)}
-                >
-                  <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
-                </Pressable>
-              </Row>
-            </Row>
-          ))}
+        <View style={{ marginTop: spacing.lg }}>
+          <List>
+            {entries.slice(0, 3).map((entry) => (
+              <ListItem
+                key={entry.id}
+                title={relativeLabel(entry.date)}
+                meta={
+                  <Row gap={spacing.md}>
+                    <Data small color={colors.textMuted}>
+                      {valueLabel(entry.value, descriptor)}
+                    </Data>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${descriptor.label} reading from ${formatShort(entry.date)}`}
+                      hitSlop={8}
+                      onPress={() => onRemove(entry.id)}
+                    >
+                      <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
+                    </Pressable>
+                  </Row>
+                }
+              />
+            ))}
+          </List>
           {entries.length > 3 ? (
-            <Caption color={colors.textFaint}>+{entries.length - 3} earlier</Caption>
+            <Caption color={colors.textFaint} style={{ marginTop: spacing.sm }}>
+              +{entries.length - 3} earlier
+            </Caption>
           ) : null}
-        </>
+        </View>
       ) : null}
 
-      <Divider />
-      {open ? (
+      <Spacer size={spacing.lg} />
+      {adding ? (
         <AddForm
           descriptor={descriptor}
-          onCancel={() => setOpen(false)}
+          onCancel={() => setAdding(false)}
           onSave={(value, date) => {
             onAdd({ metricId: descriptor.metricId, date, value });
-            setOpen(false);
+            setAdding(false);
           }}
         />
       ) : (
-        <Button label="Add measurement" variant="secondary" onPress={() => setOpen(true)} />
+        <Button label="Add measurement" variant="secondary" onPress={() => setAdding(true)} />
       )}
-    </Card>
+    </View>
   );
 }
 
-function ChangeLine({ descriptor, summary }: { descriptor: Descriptor; summary: MetricSummary }) {
-  const change = summary.change ?? 0;
-  const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
-  const magnitude = valueLabel(Math.abs(change), descriptor);
-  const since = formatShort(summary.points[0]!.date);
-  // Percentage is only meaningful for a measured quantity, not a 1–5 rating.
-  const pct =
-    descriptor.kind === 'number' && summary.changePct !== null
-      ? ` (${summary.changePct > 0 ? '+' : ''}${summary.changePct}%)`
-      : '';
+// ---------------------------------------------------------------------------
+// Overview — moved from Summary (THEA-38b): the adherence/compound counters
+// belong with the rest of "how am I doing", not the "what's next" screen.
+// ---------------------------------------------------------------------------
+
+function OverviewSection({
+  stack,
+  doseLogs,
+  injectionLogs,
+  onOpenAnalytics,
+}: {
+  stack: Stack | null;
+  doseLogs: Record<string, DoseLog>;
+  injectionLogs: unknown[];
+  onOpenAnalytics: () => void;
+}) {
+  const adherencePct = useMemo(() => {
+    if (!stack) return null;
+    const doses = generateSchedule(stack, addDays(today(), -13), today());
+    const { pct, taken, skipped } = selectAdherence(doses, doseLogs);
+    return taken + skipped === 0 ? null : pct;
+  }, [stack, doseLogs]);
+
   return (
-    <Small style={{ marginTop: spacing.sm }} muted>
-      {change === 0 ? `No change since ${since}` : `${arrow} ${magnitude}${pct} since ${since}`}
-    </Small>
+    <Section title="Overview">
+      <Row gap={spacing.md}>
+        <StatTile label="Adherence · 14d" value={adherencePct === null ? '—' : `${adherencePct}%`} />
+        <StatTile label="Active compounds" value={`${stack?.items.length ?? 0}`} />
+        <StatTile label="Logged injections" value={`${injectionLogs.length}`} />
+      </Row>
+      <Button label="Open full analytics" variant="ghost" onPress={onOpenAnalytics} />
+    </Section>
   );
 }
 
@@ -423,7 +554,7 @@ function ScaleField({ value, onChange }: { value: number | null; onChange: (next
 // Custom measure
 // ---------------------------------------------------------------------------
 
-function CustomCard({ onAdd }: { onAdd: (entry: Omit<Measurement, 'id'>) => void }) {
+function CustomMeasureSection({ onAdd }: { onAdd: (entry: Omit<Measurement, 'id'>) => void }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
   const [unit, setUnit] = useState('');
@@ -453,61 +584,55 @@ function CustomCard({ onAdd }: { onAdd: (entry: Omit<Measurement, 'id'>) => void
     reset();
   };
 
-  if (!open) {
-    return (
-      <Card>
-        <Heading>Track something else</Heading>
-        <Small style={{ marginTop: 2 }}>Any other measure you want to follow — energy, mood, a lift, a lab value.</Small>
-        <Spacer size={spacing.md} />
-        <Button label="Add a custom measure" variant="secondary" onPress={() => setOpen(true)} />
-      </Card>
-    );
-  }
-
   return (
-    <Card>
-      <Heading>New custom measure</Heading>
-      <Spacer size={spacing.md} />
-      <View style={styles.inputWrap}>
-        <TextInput
-          style={styles.input}
-          value={label}
-          onChangeText={setLabel}
-          placeholder="Name (e.g. Resting heart rate)"
-          placeholderTextColor={colors.textFaint}
-        />
-      </View>
-      <Spacer size={spacing.sm} />
-      <View style={styles.inputWrap}>
-        <TextInput
-          style={styles.input}
-          value={unit}
-          onChangeText={setUnit}
-          placeholder="Unit (optional, e.g. bpm)"
-          placeholderTextColor={colors.textFaint}
-          autoCapitalize="none"
-        />
-      </View>
-      <Spacer size={spacing.sm} />
-      <View style={styles.inputWrap}>
-        <TextInput
-          style={styles.input}
-          value={text}
-          onChangeText={setText}
-          keyboardType="decimal-pad"
-          placeholder="Value"
-          placeholderTextColor={colors.textFaint}
-          onSubmitEditing={save}
-        />
-      </View>
-      <Spacer size={spacing.md} />
-      <DateField date={date} onChange={setDate} />
-      <Spacer size={spacing.md} />
-      <Row gap={spacing.sm}>
-        <Button label="Save" onPress={save} disabled={!valid} style={{ flex: 1 }} />
-        <Button label="Cancel" variant="ghost" onPress={reset} style={{ flex: 1 }} />
-      </Row>
-    </Card>
+    <Section title="Track something else" last gap={spacing.md}>
+      <Small>Any other measure you want to follow — energy, mood, a lift, a lab value.</Small>
+      {open ? (
+        <View>
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.input}
+              value={label}
+              onChangeText={setLabel}
+              placeholder="Name (e.g. Resting heart rate)"
+              placeholderTextColor={colors.textFaint}
+            />
+          </View>
+          <Spacer size={spacing.sm} />
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.input}
+              value={unit}
+              onChangeText={setUnit}
+              placeholder="Unit (optional, e.g. bpm)"
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="none"
+            />
+          </View>
+          <Spacer size={spacing.sm} />
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.input}
+              value={text}
+              onChangeText={setText}
+              keyboardType="decimal-pad"
+              placeholder="Value"
+              placeholderTextColor={colors.textFaint}
+              onSubmitEditing={save}
+            />
+          </View>
+          <Spacer size={spacing.md} />
+          <DateField date={date} onChange={setDate} />
+          <Spacer size={spacing.md} />
+          <Row gap={spacing.sm}>
+            <Button label="Save" onPress={save} disabled={!valid} style={{ flex: 1 }} />
+            <Button label="Cancel" variant="ghost" onPress={reset} style={{ flex: 1 }} />
+          </Row>
+        </View>
+      ) : (
+        <Button label="Add a custom measure" variant="secondary" onPress={() => setOpen(true)} />
+      )}
+    </Section>
   );
 }
 

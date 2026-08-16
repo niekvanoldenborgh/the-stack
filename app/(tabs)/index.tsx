@@ -4,11 +4,11 @@ import { View } from 'react-native';
 
 import { getPeptide } from '../../src/domain/peptides';
 import type { DoseLog, Peptide, PhaseKind, Stack } from '../../src/domain/types';
-import { generateSchedule, summariseCycle } from '../../src/engine/cycle';
+import { summariseCycle } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import { buildLevelSeries, peptideHasLevelModel, pkShortHalfLifeClearance, type LevelSeriesResult } from '../../src/engine/pk';
-import { addDays, formatShort, relativeLabel, timeToMinutes, today } from '../../src/lib/date';
-import { selectAdherence, useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
+import { formatShort, relativeLabel, timeToMinutes, today } from '../../src/lib/date';
+import { useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
 import { LevelCurve } from '../../src/ui/charts';
 import {
   Badge,
@@ -23,20 +23,24 @@ import {
   Screen,
   Small,
   Spacer,
-  StatTile,
 } from '../../src/ui/components';
 import { RouteIcon } from '../../src/ui/icons';
 import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
 import { colors, spacing, type SeverityTone } from '../../src/ui/theme';
 
 /**
- * Summary (page 1) — THEA-8, redesigned THEA-38.
+ * Summary (page 1) — THEA-8, redesigned THEA-38, THEA-40.
  *
  * One focal block — the next scheduled injection — carries the top of the
- * screen; everything else (overview stats, estimated levels, current stack)
- * steps down into borderless, tone-shifted sections below it. The old
- * four-equal-cards layout and its up/down reorder toggle are gone: this is a
- * fixed hierarchy now, not a shelf of homogeneous widgets.
+ * screen; everything else (estimated levels, current stack) steps down into
+ * borderless, tone-shifted sections below it. The old four-equal-cards
+ * layout and its up/down reorder toggle are gone: this is a fixed hierarchy
+ * now, not a shelf of homogeneous widgets.
+ *
+ * This screen answers "what's next"; "how am I doing" (adherence, active
+ * compounds, injections logged, the per-goal measurements) now lives on
+ * Results instead — it used to be duplicated as an Overview block here too
+ * (THEA-40 consolidation).
  *
  * The levels section is the only part of this screen with hard rules — see
  * the PK spec's no-dosage boundary (§3). It reads exactly what §1–§2 hand it
@@ -78,13 +82,6 @@ export default function SummaryScreen() {
         alarmOffsetsMin={settings.alarmOffsetsMin}
         remindersEnabled={settings.remindersEnabled}
         onOpenAlarmSettings={() => router.push('/settings/alarm')}
-      />
-
-      <OverviewSection
-        stack={stack}
-        doseLogs={doseLogs}
-        injectionLogs={injectionLogs}
-        onOpenAnalytics={() => router.push('/analytics')}
       />
 
       <LevelsSection
@@ -186,40 +183,6 @@ function NextInjectionSection({
           <Button label="Open alarm settings" variant="secondary" onPress={onOpenAlarmSettings} style={{ marginTop: spacing.md }} />
         </View>
       )}
-    </Section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Overview
-// ---------------------------------------------------------------------------
-
-function OverviewSection({
-  stack,
-  doseLogs,
-  injectionLogs,
-  onOpenAnalytics,
-}: {
-  stack: Stack | null;
-  doseLogs: Record<string, DoseLog>;
-  injectionLogs: unknown[];
-  onOpenAnalytics: () => void;
-}) {
-  const adherencePct = useMemo(() => {
-    if (!stack) return null;
-    const doses = generateSchedule(stack, addDays(today(), -13), today());
-    const { pct, taken, skipped } = selectAdherence(doses, doseLogs);
-    return taken + skipped === 0 ? null : pct;
-  }, [stack, doseLogs]);
-
-  return (
-    <Section title="Overview">
-      <Row gap={spacing.md}>
-        <StatTile label="Adherence · 14d" value={adherencePct === null ? '—' : `${adherencePct}%`} />
-        <StatTile label="Active compounds" value={`${stack?.items.length ?? 0}`} />
-        <StatTile label="Logged injections" value={`${injectionLogs.length}`} />
-      </Row>
-      <Button label="Open full analytics" variant="ghost" onPress={onOpenAnalytics} />
     </Section>
   );
 }

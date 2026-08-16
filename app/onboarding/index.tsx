@@ -25,7 +25,6 @@ import {
   Button,
   Callout,
   Caption,
-  Card,
   Chip,
   Display,
   Divider,
@@ -34,7 +33,6 @@ import {
   ProgressBar,
   Row,
   Screen,
-  SectionTitle,
   Small,
   Spacer,
   Title,
@@ -42,7 +40,8 @@ import {
 } from '../../src/ui/components';
 import { RiskPicker } from '../../src/ui/RiskPicker';
 import { RulerPicker } from '../../src/ui/RulerPicker';
-import { LEGAL_LABELS, colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
+import { List, ListItem, Section } from '../../src/ui/primitives';
+import { LEGAL_LABELS, colors, radius, spacing, typography } from '../../src/ui/theme';
 
 type Step = 'disclaimer' | 'basics' | 'lifestyle' | 'goals' | 'current' | 'health' | 'review';
 
@@ -62,6 +61,19 @@ const EXPERIENCE_OPTIONS: Array<{ id: Experience; label: string; hint: string }>
   { id: 'experienced', label: 'Experienced', hint: 'Multiple cycles, familiar with protocols' },
 ];
 
+/**
+ * Onboarding, redesigned THEA-40.
+ *
+ * Each step already had exactly one primary action (the bottom "Continue" /
+ * "Build my stack" button) and a `Display` + `Body` heading, so the
+ * hierarchy and single-action shape here didn't need inventing — what
+ * changed is the field grouping underneath: related fields (age/weight/
+ * height, activity/training days/experience, sleep hours/quality) now share
+ * one `Section` instead of one bordered `Card` each, and the compound
+ * search under "Are you running anything now?" uses `List`/`ListItem`
+ * instead of a hand-styled selectable row. The under-18/21 growth-plate
+ * copy is carried over byte-for-byte (AGENTS.md invariant 7).
+ */
 export default function Onboarding() {
   const router = useRouter();
   const saveProfile = useAppStore((s) => s.saveProfile);
@@ -225,39 +237,43 @@ export default function Onboarding() {
           </Body>
           <Spacer />
 
-          <Card>
-            <Caption color={colors.textMuted}>Age</Caption>
-            <Spacer size={spacing.md} />
-            <RulerPicker value={age} onChange={setAge} min={13} max={90} unit="years" />
-            {age < 21 ? (
-              <View style={{ marginTop: spacing.lg }}>
-                <Callout
-                  tone={age < 18 ? 'critical' : 'high'}
-                  title={age < 18 ? 'Your growth plates are still open' : 'Your growth plates may not be closed yet'}
-                >
-                  {age < 18
-                    ? 'Growth-hormone and IGF-1 compounds act directly on open growth plates. Getting this wrong can permanently change your adult height and bone proportions, and it cannot be reversed. There is also no safety data for any of these compounds in under-18s — every dose figure in this app is extrapolated from adults.\n\nYou can continue, and every affected compound will be flagged. Please talk to a doctor first.'
-                    : 'Growth plates typically finish closing between about 18 and 21, later in males. Growth-hormone compounds are ranked lower for you and will carry a warning, because skeletal changes are still possible at your age.'}
-                </Callout>
-              </View>
-            ) : null}
-          </Card>
+          <Section title="Body measurements" gap={spacing.xl}>
+            <View>
+              <Caption color={colors.textMuted}>Age</Caption>
+              <Spacer size={spacing.md} />
+              <RulerPicker value={age} onChange={setAge} min={13} max={90} unit="years" />
+              {age < 21 ? (
+                <View style={{ marginTop: spacing.lg }}>
+                  <Callout
+                    tone={age < 18 ? 'critical' : 'high'}
+                    title={age < 18 ? 'Your growth plates are still open' : 'Your growth plates may not be closed yet'}
+                  >
+                    {age < 18
+                      ? 'Growth-hormone and IGF-1 compounds act directly on open growth plates. Getting this wrong can permanently change your adult height and bone proportions, and it cannot be reversed. There is also no safety data for any of these compounds in under-18s — every dose figure in this app is extrapolated from adults.\n\nYou can continue, and every affected compound will be flagged. Please talk to a doctor first.'
+                      : 'Growth plates typically finish closing between about 18 and 21, later in males. Growth-hormone compounds are ranked lower for you and will carry a warning, because skeletal changes are still possible at your age.'}
+                  </Callout>
+                </View>
+              ) : null}
+            </View>
 
-          <Card>
-            <Caption color={colors.textMuted}>Bodyweight</Caption>
-            <Spacer size={spacing.md} />
-            <RulerPicker value={weightKg} onChange={setWeightKg} min={35} max={200} unit="kg" />
-          </Card>
+            <Divider />
 
-          <Card>
-            <Caption color={colors.textMuted}>Height</Caption>
-            <Spacer size={spacing.md} />
-            <RulerPicker value={heightCm} onChange={setHeightCm} min={130} max={220} unit="cm" />
-          </Card>
+            <View>
+              <Caption color={colors.textMuted}>Bodyweight</Caption>
+              <Spacer size={spacing.md} />
+              <RulerPicker value={weightKg} onChange={setWeightKg} min={35} max={200} unit="kg" />
+            </View>
 
-          <Card>
-            <Caption color={colors.textMuted}>Sex</Caption>
-            <Spacer size={spacing.md} />
+            <Divider />
+
+            <View>
+              <Caption color={colors.textMuted}>Height</Caption>
+              <Spacer size={spacing.md} />
+              <RulerPicker value={heightCm} onChange={setHeightCm} min={130} max={220} unit="cm" />
+            </View>
+          </Section>
+
+          <Section title="Sex" last>
             <Row wrap>
               {(['male', 'female', 'other'] as Sex[]).map((option) => (
                 <Chip
@@ -272,7 +288,7 @@ export default function Onboarding() {
               Used for warnings that differ by sex — for example, that tirzepatide reduces oral contraceptive
               absorption. It does not change the dose maths.
             </Small>
-          </Card>
+          </Section>
         </View>
       ) : null}
 
@@ -285,78 +301,88 @@ export default function Onboarding() {
           </Body>
           <Spacer />
 
-          <Card>
-            <Caption color={colors.textMuted}>Activity level</Caption>
-            <Spacer size={spacing.md} />
-            {ACTIVITY_OPTIONS.map((option) => (
-              <Chip
-                key={option.id}
-                label={option.label}
-                sublabel={option.hint}
-                selected={activity === option.id}
-                onPress={() => setActivity(option.id)}
-              />
-            ))}
-          </Card>
-
-          <Card>
-            <Caption color={colors.textMuted}>Training days per week</Caption>
-            <Spacer size={spacing.md} />
-            <Row wrap>
-              {([2, 3, 4, 5, 6] as TrainingDaysPerWeek[]).map((days) => (
+          <Section title="Training" gap={spacing.xl}>
+            <View>
+              <Caption color={colors.textMuted}>Activity level</Caption>
+              <Spacer size={spacing.md} />
+              {ACTIVITY_OPTIONS.map((option) => (
                 <Chip
-                  key={days}
-                  label={`${days}`}
-                  selected={trainingDays === days}
-                  onPress={() => setTrainingDays(days)}
+                  key={option.id}
+                  label={option.label}
+                  sublabel={option.hint}
+                  selected={activity === option.id}
+                  onPress={() => setActivity(option.id)}
                 />
               ))}
-            </Row>
-          </Card>
+            </View>
 
-          <Card>
-            <Caption color={colors.textMuted}>Average sleep per night</Caption>
-            <Spacer size={spacing.md} />
-            <RulerPicker value={sleepHours} onChange={setSleepHours} min={3} max={11} step={0.5} unit="hours" />
-            {sleepHours < 6.5 ? (
-              <View style={{ marginTop: spacing.lg }}>
-                <Callout tone="moderate" title="This will limit what any stack can do">
-                  Under about 6.5 hours, GH-axis compounds have much less to amplify. The engine will hold those
-                  doses down rather than pretending a bigger dose compensates.
-                </Callout>
-              </View>
-            ) : null}
-          </Card>
+            <Divider />
 
-          <Card>
-            <Caption color={colors.textMuted}>Sleep quality</Caption>
-            <Spacer size={spacing.md} />
-            <Row wrap>
-              {[1, 2, 3, 4, 5].map((score) => (
+            <View>
+              <Caption color={colors.textMuted}>Training days per week</Caption>
+              <Spacer size={spacing.md} />
+              <Row wrap>
+                {([2, 3, 4, 5, 6] as TrainingDaysPerWeek[]).map((days) => (
+                  <Chip
+                    key={days}
+                    label={`${days}`}
+                    selected={trainingDays === days}
+                    onPress={() => setTrainingDays(days)}
+                  />
+                ))}
+              </Row>
+            </View>
+
+            <Divider />
+
+            <View>
+              <Caption color={colors.textMuted}>Peptide experience</Caption>
+              <Spacer size={spacing.md} />
+              {EXPERIENCE_OPTIONS.map((option) => (
                 <Chip
-                  key={score}
-                  label={`${score}`}
-                  selected={sleepQuality === score}
-                  onPress={() => setSleepQuality(score)}
+                  key={option.id}
+                  label={option.label}
+                  sublabel={option.hint}
+                  selected={experience === option.id}
+                  onPress={() => setExperience(option.id)}
                 />
               ))}
-            </Row>
-            <Small style={{ marginTop: spacing.sm }}>1 = broken and unrefreshing, 5 = deep and consistent.</Small>
-          </Card>
+            </View>
+          </Section>
 
-          <Card>
-            <Caption color={colors.textMuted}>Peptide experience</Caption>
-            <Spacer size={spacing.md} />
-            {EXPERIENCE_OPTIONS.map((option) => (
-              <Chip
-                key={option.id}
-                label={option.label}
-                sublabel={option.hint}
-                selected={experience === option.id}
-                onPress={() => setExperience(option.id)}
-              />
-            ))}
-          </Card>
+          <Section title="Sleep" gap={spacing.xl} last>
+            <View>
+              <Caption color={colors.textMuted}>Average sleep per night</Caption>
+              <Spacer size={spacing.md} />
+              <RulerPicker value={sleepHours} onChange={setSleepHours} min={3} max={11} step={0.5} unit="hours" />
+              {sleepHours < 6.5 ? (
+                <View style={{ marginTop: spacing.lg }}>
+                  <Callout tone="moderate" title="This will limit what any stack can do">
+                    Under about 6.5 hours, GH-axis compounds have much less to amplify. The engine will hold those
+                    doses down rather than pretending a bigger dose compensates.
+                  </Callout>
+                </View>
+              ) : null}
+            </View>
+
+            <Divider />
+
+            <View>
+              <Caption color={colors.textMuted}>Sleep quality</Caption>
+              <Spacer size={spacing.md} />
+              <Row wrap>
+                {[1, 2, 3, 4, 5].map((score) => (
+                  <Chip
+                    key={score}
+                    label={`${score}`}
+                    selected={sleepQuality === score}
+                    onPress={() => setSleepQuality(score)}
+                  />
+                ))}
+              </Row>
+              <Small style={{ marginTop: spacing.sm }}>1 = broken and unrefreshing, 5 = deep and consistent.</Small>
+            </View>
+          </Section>
         </View>
       ) : null}
 
@@ -446,14 +472,11 @@ export default function Onboarding() {
           />
 
           {usingNow ? (
-            <View style={{ marginTop: spacing.lg }}>
-              <Row justify="space-between" style={{ marginBottom: spacing.md }}>
-                <Caption color={colors.textMuted}>Select everything you are on</Caption>
-                {currentPeptides.length > 0 ? (
-                  <Badge label={`${currentPeptides.length} selected`} tone="accent" />
-                ) : null}
-              </Row>
-
+            <Section
+              title="Select everything you are on"
+              action={currentPeptides.length > 0 ? <Badge label={`${currentPeptides.length} selected`} tone="accent" /> : undefined}
+              last
+            >
               <TextInput
                 value={currentQuery}
                 onChangeText={setCurrentQuery}
@@ -463,39 +486,24 @@ export default function Onboarding() {
                 autoCorrect={false}
                 clearButtonMode="while-editing"
               />
-              <Spacer size={spacing.md} />
-
-              {currentResults.map((peptide) => {
-                const selected = currentPeptides.includes(peptide.id);
-                return (
-                  <Pressable
-                    key={peptide.id}
-                    onPress={() => toggleCurrent(peptide.id)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    style={({ pressed }) => ({
-                      backgroundColor: selected ? `${colors.accent}12` : colors.surface,
-                      borderColor: selected ? colors.accent : colors.border,
-                      borderWidth: 1,
-                      borderRadius: radius.md,
-                      padding: spacing.md,
-                      marginBottom: spacing.sm,
-                      opacity: pressed ? 0.8 : 1,
-                    })}
-                  >
-                    <Row justify="space-between" align="flex-start">
-                      <View style={{ flex: 1 }}>
-                        <Body style={{ fontFamily: fonts.sansMedium }}>{peptide.name}</Body>
-                        <Small style={{ marginTop: 2 }}>
-                          {LEGAL_LABELS[peptide.legalStatus] ?? peptide.legalStatus}
-                        </Small>
-                      </View>
-                      {selected ? <Badge label="On it" tone="accent" solid /> : null}
-                    </Row>
-                  </Pressable>
-                );
-              })}
-            </View>
+              {currentResults.length > 0 ? (
+                <List>
+                  {currentResults.map((peptide) => {
+                    const selected = currentPeptides.includes(peptide.id);
+                    return (
+                      <ListItem
+                        key={peptide.id}
+                        title={peptide.name}
+                        detail={LEGAL_LABELS[peptide.legalStatus] ?? peptide.legalStatus}
+                        onPress={() => toggleCurrent(peptide.id)}
+                        tone={selected ? 'accent' : undefined}
+                        meta={selected ? <Badge label="On it" tone="accent" solid /> : undefined}
+                      />
+                    );
+                  })}
+                </List>
+              ) : null}
+            </Section>
           ) : null}
 
           {usingNow === false ? (
@@ -516,7 +524,7 @@ export default function Onboarding() {
           </Body>
           <Spacer />
 
-          {(['absolute', 'metabolic', 'cardio_renal', 'other'] as const).map((group) => {
+          {(['absolute', 'metabolic', 'cardio_renal', 'other'] as const).map((group, index, groups) => {
             const items = HEALTH_FLAGS.filter((f) => f.group === group);
             const label = {
               absolute: 'Hard stops',
@@ -525,8 +533,7 @@ export default function Onboarding() {
               other: 'Other',
             }[group];
             return (
-              <View key={group}>
-                <SectionTitle>{label}</SectionTitle>
+              <Section key={group} title={label} tone={group === 'absolute' ? 2 : 1} last={index === groups.length - 1}>
                 {items.map((flag) => (
                   <Toggle
                     key={flag.id}
@@ -536,11 +543,10 @@ export default function Onboarding() {
                     tone={group === 'absolute' ? 'critical' : 'accent'}
                   />
                 ))}
-              </View>
+              </Section>
             );
           })}
 
-          <Spacer />
           <Small>
             None of these apply? Leave them all unticked and continue. You can change this at any time from your
             profile, and your stack will be re-evaluated when you do.
@@ -560,8 +566,7 @@ export default function Onboarding() {
 
           <RiskPicker value={riskTolerance} onChange={setRiskTolerance} />
 
-          <SectionTitle>Your profile</SectionTitle>
-          <Card>
+          <Section title="Your profile" last>
             <SummaryRow label="Age" value={`${age}`} tone={age < 21 ? 'moderate' : undefined} />
             <Divider />
             <SummaryRow label="Bodyweight" value={`${weightKg} kg`} />
@@ -594,7 +599,7 @@ export default function Onboarding() {
               value={healthFlags.length === 0 ? 'None reported' : `${healthFlags.length} reported`}
               tone={healthFlags.length > 0 ? 'moderate' : undefined}
             />
-          </Card>
+          </Section>
         </View>
       ) : null}
 
