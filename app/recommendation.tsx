@@ -58,7 +58,7 @@ export default function RecommendationScreen() {
     return (
       <Screen>
         <Spacer size={spacing.xl} />
-        <EmptyState title="No profile yet" body="Complete onboarding to get a recommendation." />
+        <EmptyState title="No profile yet" body="Complete onboarding to get a recommendation." illustration="onboarding" />
       </Screen>
     );
   }
@@ -152,6 +152,7 @@ export default function RecommendationScreen() {
         <EmptyState
           title="Nothing cleared the bar"
           body="At this risk setting, every compound that serves your goals is either contraindicated for you, conflicts with what you are already taking, or falls below the evidence threshold. Try raising the dial."
+          illustration="noMatch"
         />
       ) : (
         <View style={{ marginBottom: spacing.xxl }}>

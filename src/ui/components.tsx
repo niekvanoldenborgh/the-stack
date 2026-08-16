@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenAtmosphere } from './atmosphere';
+import { Illustration, type IllustrationName } from './illustrations';
 import { colors, fonts, radius, spacing, toneColors, typography, type SeverityTone } from './theme';
 
 // ---------------------------------------------------------------------------
@@ -446,9 +447,25 @@ export function StatTile({ label, value, hint, tone }: { label: string; value: s
   );
 }
 
-export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+export function EmptyState({
+  title,
+  body,
+  action,
+  illustration,
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+  illustration?: IllustrationName;
+}) {
   return (
     <Card style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
+      {illustration && (
+        <>
+          <Illustration name={illustration} size={140} />
+          <Spacer size={spacing.md} />
+        </>
+      )}
       <Heading style={{ textAlign: 'center' }}>{title}</Heading>
       <Small style={{ textAlign: 'center', marginTop: spacing.sm, marginBottom: action ? spacing.lg : 0 }}>{body}</Small>
       {action}

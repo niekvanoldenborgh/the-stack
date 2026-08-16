@@ -15,7 +15,7 @@ export default function SafetyScreen() {
     return (
       <Screen>
         <Spacer size={spacing.xl} />
-        <EmptyState title="No active stack" body="There is nothing to evaluate yet." />
+        <EmptyState title="No active stack" body="There is nothing to evaluate yet." illustration="noStack" />
       </Screen>
     );
   }

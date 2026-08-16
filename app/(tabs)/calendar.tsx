@@ -21,21 +21,30 @@ import {
   Badge,
   Body,
   Caption,
-  Card,
   Data,
   Display,
+  Divider,
   EmptyState,
   Row,
   Screen,
-  SectionTitle,
   Small,
   Spacer,
 } from '../../src/ui/components';
-import { MetaChip, TimelineRow, WeekStrip, type DayMarker } from '../../src/ui/schedule';
+import { Section } from '../../src/ui/primitives';
+import { MetaChip, TimelineRow, WeekStrip } from '../../src/ui/schedule';
+import type { DayMarker } from '../../src/ui/schedule';
 import { colors, radius, spacing, type SeverityTone } from '../../src/ui/theme';
 
 /**
- * Calendar (page 4).
+ * Calendar (page 4), redesigned THEA-40.
+ *
+ * The timeline primitives (`WeekStrip`, `TimelineRow`, `MetaChip`) are
+ * untouched — they were already the "real timeline" this design language
+ * asks for. What changed is the four separately-bordered `Card`s around
+ * them: the cycle overview, the show/hide filters, the week strip and the
+ * selected day now each sit in one borderless `Section` instead, so the
+ * screen reads as four grouped decisions rather than four boxes stacked on
+ * top of a fifth (the timeline itself).
  *
  * Three things share one timeline: injections you have already logged, the
  * injections still coming, and the side effects you have recorded. A week
@@ -154,6 +163,7 @@ export default function CalendarScreen() {
         <EmptyState
           title="No active stack"
           body="Once you start a stack, your injections, upcoming doses and logged side effects will show up here."
+          illustration="noStack"
         />
       </Screen>
     );
@@ -222,46 +232,56 @@ export default function CalendarScreen() {
 
   return (
     <Screen>
-      <Display>Calendar</Display>
+      <Caption color={colors.accent}>Schedule</Caption>
+      <Display style={{ marginTop: spacing.sm }}>Calendar</Display>
       <Body muted style={{ marginTop: spacing.xs }}>
         {stack.name}
       </Body>
+      <Spacer size={spacing.lg} />
 
       {/* Cycle overview ----------------------------------------------------- */}
-      <SectionTitle>Stack cycle</SectionTitle>
-      {stackPeptideIds.map((id) => {
-        const phases = phasesByPeptide.get(id);
-        if (!phases || phases.length === 0) return null;
-        return <CyclePhaseBar key={id} name={getPeptide(id)?.name ?? id} phases={phases} />;
-      })}
+      <Section title="Stack cycle" gap={spacing.xl}>
+        {stackPeptideIds.map((id, index) => {
+          const phases = phasesByPeptide.get(id);
+          if (!phases || phases.length === 0) return null;
+          return (
+            <View key={id}>
+              {index > 0 ? <Divider style={{ marginBottom: spacing.xl }} /> : null}
+              <CyclePhaseBar name={getPeptide(id)?.name ?? id} phases={phases} />
+            </View>
+          );
+        })}
+      </Section>
 
       {/* Filters ------------------------------------------------------------ */}
-      <SectionTitle>Show</SectionTitle>
-      <Row gap={spacing.xs} wrap>
-        <FilterPill icon="checkmark-done" label="Injections" active={showPast} onPress={() => setShowPast((v) => !v)} />
-        <FilterPill icon="time-outline" label="Upcoming" active={showUpcoming} onPress={() => setShowUpcoming((v) => !v)} />
-        <FilterPill
-          icon="pulse-outline"
-          label="Side effects"
-          active={showSideEffects}
-          onPress={() => setShowSideEffects((v) => !v)}
-        />
-      </Row>
-      {stackPeptideIds.length > 1 ? (
-        <Row gap={spacing.xs} wrap style={{ marginTop: spacing.sm }}>
-          {stackPeptideIds.map((id) => (
-            <FilterPill
-              key={id}
-              label={getPeptide(id)?.name ?? id}
-              active={!hiddenPeptides.has(id)}
-              onPress={() => togglePeptide(id)}
-            />
-          ))}
+      <Section title="Show" gap={spacing.sm}>
+        <Row gap={spacing.xs} wrap>
+          <FilterPill icon="checkmark-done" label="Injections" active={showPast} onPress={() => setShowPast((v) => !v)} />
+          <FilterPill icon="time-outline" label="Upcoming" active={showUpcoming} onPress={() => setShowUpcoming((v) => !v)} />
+          <FilterPill
+            icon="pulse-outline"
+            label="Side effects"
+            active={showSideEffects}
+            onPress={() => setShowSideEffects((v) => !v)}
+          />
         </Row>
-      ) : null}
+        {stackPeptideIds.length > 1 ? (
+          <Row gap={spacing.xs} wrap>
+            {stackPeptideIds.map((id) => (
+              <FilterPill
+                key={id}
+                label={getPeptide(id)?.name ?? id}
+                active={!hiddenPeptides.has(id)}
+                onPress={() => togglePeptide(id)}
+              />
+            ))}
+          </Row>
+        ) : null}
+      </Section>
 
       {/* Week strip --------------------------------------------------------- */}
-      <SectionTitle
+      <Section
+        title={formatRange(weekDates[0]!, weekDates[6]!)}
         action={
           <Row gap={spacing.xs}>
             <StepArrow icon="chevron-back" label="Previous week" onPress={() => shiftWeek(-1)} />
@@ -269,19 +289,15 @@ export default function CalendarScreen() {
           </Row>
         }
       >
-        {formatRange(weekDates[0]!, weekDates[6]!)}
-      </SectionTitle>
-      <WeekStrip days={dayMarkers} selected={selected} onSelect={setSelected} />
+        <WeekStrip days={dayMarkers} selected={selected} onSelect={setSelected} />
+      </Section>
 
       {/* Selected day ------------------------------------------------------- */}
-      <SectionTitle>{formatLong(selected)}</SectionTitle>
-      {selectedEvents.length === 0 ? (
-        <Card>
+      <Section title={formatLong(selected)} last>
+        {selectedEvents.length === 0 ? (
           <Small style={{ textAlign: 'center' }}>Nothing on this day with the current filters.</Small>
-        </Card>
-      ) : (
-        <Card>
-          {selectedEvents.map((event, index) =>
+        ) : (
+          selectedEvents.map((event, index) =>
             event.kind === 'dose' ? (
               <DoseTimelineRow
                 key={event.key}
@@ -297,10 +313,9 @@ export default function CalendarScreen() {
                 last={index === selectedEvents.length - 1}
               />
             ),
-          )}
-        </Card>
-      )}
-      <Spacer size={spacing.xl} />
+          )
+        )}
+      </Section>
     </Screen>
   );
 }
@@ -311,7 +326,7 @@ export default function CalendarScreen() {
 
 function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<typeof buildCyclePhases> }) {
   return (
-    <Card>
+    <View>
       <Body style={{ marginBottom: spacing.sm }}>{name}</Body>
 
       {/* Proportional bar: segment width follows phase length in days. */}
@@ -356,7 +371,7 @@ function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<type
           );
         })}
       </View>
-    </Card>
+    </View>
   );
 }
 
@@ -434,7 +449,7 @@ function FilterPill({
         borderRadius: radius.pill,
         borderWidth: 1,
         borderColor: active ? colors.accent : colors.border,
-        backgroundColor: active ? colors.accentDim : colors.surface,
+        backgroundColor: active ? colors.accentDim : colors.surfaceHigh,
         opacity: pressed ? 0.75 : 1,
       })}
     >
@@ -469,7 +484,7 @@ function StepArrow({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: colors.border,
-        backgroundColor: colors.surface,
+        backgroundColor: colors.surfaceHigh,
         opacity: pressed ? 0.7 : 1,
       })}
     >
