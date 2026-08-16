@@ -1,12 +1,13 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { PEPTIDES, getPeptide, searchPeptides } from '../../src/domain/peptides';
+import { getPeptide } from '../../src/domain/peptides';
 import { SEVERITY_MAX, SEVERITY_MIN, SIDE_EFFECT_OPTIONS, severityBand } from '../../src/domain/sideEffects';
-import type { Dose, DoseUnit, InjectionSite } from '../../src/domain/types';
+import type { Dose, DoseUnit, InjectionSite, Peptide } from '../../src/domain/types';
 import { concentration, formatDose, reconstitute } from '../../src/engine/dosing';
 import { formatShort, today } from '../../src/lib/date';
-import { useAppStore } from '../../src/store/useAppStore';
+import { useActiveStack, useAppStore } from '../../src/store/useAppStore';
 import { BodyFigure, INJECTION_SITE_LABELS } from '../../src/ui/BodyFigure';
 import {
   Body,
@@ -15,6 +16,7 @@ import {
   Caption,
   Data,
   Display,
+  EmptyState,
   Row,
   Screen,
   Small,
@@ -86,9 +88,11 @@ export default function LoggerScreen() {
 // ---------------------------------------------------------------------------
 
 function InjectionLogger() {
+  const router = useRouter();
   const injectionLogs = useAppStore((s) => s.injectionLogs);
   const logInjection = useAppStore((s) => s.logInjection);
   const removeInjection = useAppStore((s) => s.removeInjection);
+  const activeStack = useActiveStack();
 
   const [peptideId, setPeptideId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -102,7 +106,38 @@ function InjectionLogger() {
   const [pain, setPain] = useState(0);
   const [note, setNote] = useState('');
 
-  const results = useMemo(() => searchPeptides(search).slice(0, 8), [search]);
+  // THEA-50: log candidates are the active stack's compounds, not the whole
+  // library — "why would you log something other than the stack you're on".
+  // Selection/dose logic below (unit mismatch, over-max) is unchanged; this
+  // only narrows which peptides can be picked.
+  const stackPeptides = useMemo<Peptide[]>(() => {
+    if (!activeStack) return [];
+    const seen = new Set<string>();
+    const list: Peptide[] = [];
+    for (const item of activeStack.items) {
+      if (seen.has(item.peptideId)) continue;
+      const p = getPeptide(item.peptideId);
+      if (p) {
+        seen.add(item.peptideId);
+        list.push(p);
+      }
+    }
+    return list;
+  }, [activeStack]);
+
+  const results = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const pool = q
+      ? stackPeptides.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.id.includes(q) ||
+            p.aliases.some((a) => a.toLowerCase().includes(q)) ||
+            p.summary.toLowerCase().includes(q),
+        )
+      : stackPeptides;
+    return pool.slice(0, 8);
+  }, [search, stackPeptides]);
   const selectedPeptide = peptideId ? getPeptide(peptideId) : null;
 
   const doseNum = parseNumber(doseValue);
@@ -170,12 +205,19 @@ function InjectionLogger() {
             </View>
             <Button label="Change" variant="ghost" onPress={() => setPeptideId(null)} />
           </Row>
+        ) : stackPeptides.length === 0 ? (
+          <EmptyState
+            title="No active stack"
+            body="Build a stack first — the logger only lists compounds you're actually running."
+            action={<Button label="Build a stack" onPress={() => router.push('/builder')} />}
+            illustration="noStack"
+          />
         ) : (
           <View>
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder={`Search ${PEPTIDES.length} compounds`}
+              placeholder={`Search ${stackPeptides.length} compound${stackPeptides.length === 1 ? '' : 's'} in your stack`}
               placeholderTextColor={colors.textFaint}
               style={styles.input}
               autoCorrect={false}
