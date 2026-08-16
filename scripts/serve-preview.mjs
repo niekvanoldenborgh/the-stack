@@ -24,8 +24,15 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('../dist/', import.meta.url).pathname;
+// fileURLToPath, not `.pathname` (THEA-46): on Windows the URL pathname is
+// `/C:/Users/.../dist/` — a leading slash before the drive letter, which is not
+// a valid filesystem path, so every `stat`/`readFile` below fails and the
+// script wrongly reports "No build found" even after a successful export.
+// fileURLToPath returns the real platform path (`C:\Users\...\dist\` on
+// Windows, `/home/.../dist/` on POSIX).
+const ROOT = fileURLToPath(new URL('../dist/', import.meta.url));
 // A dedicated env var, not `PORT` — some hosting/CI environments (this one
 // included) already export `PORT` for their own listener, and picking that up
 // silently would collide with it instead of the intended dev machine port.
