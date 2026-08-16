@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Caption, Row, Small } from './components';
-import { colors, elevation, fonts, radius, spacing, toneColors, typography, type Elevation, type SeverityTone } from './theme';
+import { colors, elevation, fonts, radius, shadow, spacing, toneColors, typography, type Elevation, type SeverityTone } from './theme';
 
 /**
  * Redesign primitives (THEA-38).
@@ -20,14 +20,17 @@ import { colors, elevation, fonts, radius, spacing, toneColors, typography, type
  */
 
 // ---------------------------------------------------------------------------
-// 1. Section — borderless grouping via surface-tone shift
+// 1. Section — borderless grouping via surface tone + soft shadow
 // ---------------------------------------------------------------------------
 
 /**
  * Groups related content into one tone-shifted panel. Spacing carries the
  * hierarchy: a large gap separates one Section from the next, a tight gap
- * separates the rows inside it. No border — reserve outlines for edges a
- * user can actually press.
+ * separates the rows inside it. No border — on this light theme, elevation
+ * reads through a soft drop shadow instead (there's nowhere darker than
+ * `colors.bg` to step down into), so a tone-2+ panel (the one focal block a
+ * screen leads with) gets the stronger shadow and everything else gets a
+ * bare hint of lift.
  */
 export function Section({
   children,
@@ -58,7 +61,12 @@ export function Section({
           {action}
         </Row>
       ) : null}
-      <View style={{ backgroundColor: elevation[tone], borderRadius: radius.lg, padding: spacing.lg, gap }}>
+      <View
+        style={[
+          { backgroundColor: elevation[tone], borderRadius: radius.lg, padding: spacing.xl, gap },
+          tone >= 2 ? shadow.medium : shadow.low,
+        ]}
+      >
         {children}
       </View>
     </View>

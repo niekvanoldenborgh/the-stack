@@ -67,13 +67,14 @@ export default function LoggerScreen() {
 
   return (
     <Screen>
+      <Spacer size={spacing.md} />
       <Caption color={colors.accent}>Log</Caption>
       <Display style={{ marginTop: spacing.sm }}>Logger</Display>
-      <Small style={{ marginTop: spacing.xs }}>
+      <Small style={{ marginTop: spacing.sm }}>
         Record what you actually did. Every number here is yours — the app never suggests a dose, it only does the
         arithmetic on what you type.
       </Small>
-      <Spacer size={spacing.lg} />
+      <Spacer size={spacing.xl} />
 
       <Segmented options={MODES.map((m) => ({ value: m.key, label: m.label }))} value={mode} onChange={setMode} />
 

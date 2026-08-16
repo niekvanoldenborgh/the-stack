@@ -79,9 +79,9 @@ export default function SummaryScreen() {
 
   return (
     <Screen>
-      <Spacer size={spacing.md} />
+      <Spacer size={spacing.lg} />
       <Caption color={colors.accent}>Today</Caption>
-      <Display style={{ marginTop: spacing.sm, marginBottom: spacing.lg }}>Summary</Display>
+      <Display style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>Summary</Display>
 
       <NextInjectionSection
         upcomingDoses={upcomingDoses}

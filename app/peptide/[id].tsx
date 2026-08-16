@@ -95,7 +95,7 @@ export default function PeptideDetail() {
   return (
     <Screen>
       {/* Compact header. */}
-      <Spacer size={spacing.md} />
+      <Spacer size={spacing.lg} />
       <Display>{peptide.name}</Display>
       {peptide.aliases.length > 0 ? (
         <Small style={{ marginTop: spacing.xs }}>Also known as {peptide.aliases.join(', ')}</Small>
@@ -128,7 +128,7 @@ export default function PeptideDetail() {
         {peptide.bannedInSport ? <Badge label="Banned in sport" tone="moderate" /> : null}
       </Row>
 
-      <Spacer size={spacing.lg} />
+      <Spacer size={spacing.xl} />
       <Body>{peptide.summary}</Body>
 
       {matchingContraindications.length > 0 ? (

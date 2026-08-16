@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenAtmosphere } from './atmosphere';
 import { Illustration, type IllustrationName } from './illustrations';
-import { colors, fonts, radius, spacing, toneColors, typography, type SeverityTone } from './theme';
+import { colors, fonts, radius, shadow, spacing, toneColors, typography, type SeverityTone } from './theme';
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -34,12 +34,12 @@ export function Screen({
   scroll?: boolean;
   padded?: boolean;
   edges?: Array<'top' | 'bottom' | 'left' | 'right'>;
-  /** Graph-paper ruling and accent wash behind the header. */
+  /** Soft accent wash behind the header. */
   atmosphere?: boolean;
   tint?: string;
 }) {
   const inner = (
-    <View style={[padded && { paddingHorizontal: spacing.lg }, { paddingBottom: spacing.xxl }]}>{children}</View>
+    <View style={[padded && { paddingHorizontal: spacing.xl }, { paddingBottom: spacing.xxl }]}>{children}</View>
   );
   return (
     <SafeAreaView style={styles.screen} edges={edges}>
@@ -81,6 +81,8 @@ export function Card({
     </View>
   );
 }
+
+
 
 export function Row({
   children,
@@ -639,12 +641,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bg,
     borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
     padding: spacing.lg,
     marginBottom: spacing.md,
+    ...shadow.low,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -728,11 +729,10 @@ const styles = StyleSheet.create({
   },
   statTile: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bg,
     borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
     padding: spacing.md,
+    ...shadow.low,
   },
   callout: {
     borderRadius: radius.md,
@@ -744,10 +744,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bg,
     borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    ...shadow.low,
   },
 });

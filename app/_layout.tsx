@@ -1,9 +1,8 @@
-import { BricolageGrotesque_200ExtraLight } from '@expo-google-fonts/bricolage-grotesque/200ExtraLight';
-import { BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque/800ExtraBold';
 import { IBMPlexMono_500Medium } from '@expo-google-fonts/ibm-plex-mono/500Medium';
 import { IBMPlexMono_600SemiBold } from '@expo-google-fonts/ibm-plex-mono/600SemiBold';
-import { IBMPlexSans_400Regular } from '@expo-google-fonts/ibm-plex-sans/400Regular';
-import { IBMPlexSans_600SemiBold } from '@expo-google-fonts/ibm-plex-sans/600SemiBold';
+import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
+import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
+import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -24,12 +23,10 @@ export default function RootLayout() {
   // requires every face it ships, and Metro does not tree-shake them.
   // The map keys become the fontFamily strings used in src/ui/theme.ts.
   const [fontsLoaded, fontError] = useFonts({
-    // Display voice, used at both extremes of the weight axis.
-    BricolageGrotesque_800ExtraBold,
-    BricolageGrotesque_200ExtraLight,
-    // Reading text.
-    IBMPlexSans_400Regular,
-    IBMPlexSans_600SemiBold,
+    // Display voice and reading text — one family, three weights.
+    Inter_700Bold,
+    Inter_600SemiBold,
+    Inter_400Regular,
     // Every quantity, unit and label.
     IBMPlexMono_500Medium,
     IBMPlexMono_600SemiBold,
@@ -55,7 +52,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: colors.bg },

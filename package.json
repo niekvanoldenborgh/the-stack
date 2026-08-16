@@ -17,9 +17,8 @@
     "colors": "node scripts/sample-colors.mjs"
   },
   "dependencies": {
-    "@expo-google-fonts/bricolage-grotesque": "^0.4.1",
     "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
-    "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.11",
