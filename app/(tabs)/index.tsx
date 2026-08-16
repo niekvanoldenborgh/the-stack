@@ -223,14 +223,18 @@ function GoalProgressSection({ target, measurements }: { target?: GoalTarget; me
 
 /**
  * A row is ticked only because a matching `InjectionLog` exists for today —
- * never by tapping it. The match is the same plain peptideId equality
- * `src/engine/pk.ts` uses to pick a compound's own logs out of the list,
- * extended with a same-day date check; no fuzzy time-window or dose-size
- * heuristic. Ticking is a statement of fact ("you logged this"), not a
- * to-do the user can fake, so `ListItem` gets no `onPress` here.
+ * never by tapping it. Matching is by count, not existence: some catalog
+ * peptides schedule twice a day (e.g. ipamorelin: bedtime + post-workout),
+ * so a boolean peptideId+date match would tick *both* rows off a single
+ * logged shot. Instead, the Nth scheduled slot for a peptide today ticks
+ * only once N logs exist for that peptide today (P&S review, THEA-49) —
+ * still plain equality on peptideId + same-day date, no fuzzy time-window
+ * or dose-size heuristic. Ticking is a statement of fact ("you logged
+ * this"), not a to-do the user can fake, so `ListItem` gets no `onPress`
+ * here.
  */
-function isLoggedToday(peptideId: string, injectionLogs: InjectionLog[], todayISO: string): boolean {
-  return injectionLogs.some((log) => log.peptideId === peptideId && log.date === todayISO);
+function countLoggedToday(peptideId: string, injectionLogs: InjectionLog[], todayISO: string): number {
+  return injectionLogs.filter((log) => log.peptideId === peptideId && log.date === todayISO).length;
 }
 
 function TodayInjectionsSection({
@@ -242,13 +246,19 @@ function TodayInjectionsSection({
 }) {
   const todayISO = today();
 
-  const rows = useMemo(
-    () =>
-      upcomingDoses
-        .filter((dose) => dose.date === todayISO)
-        .map((dose) => ({ dose, logged: isLoggedToday(dose.peptideId, injectionLogs, todayISO) })),
-    [upcomingDoses, injectionLogs, todayISO],
-  );
+  const rows = useMemo(() => {
+    const todaysDoses = upcomingDoses.filter((dose) => dose.date === todayISO);
+    // upcomingDoses is schedule-ordered (date, then time) — so the count of
+    // a peptide's rows seen so far as we walk this list is its index among
+    // that peptide's scheduled slots today.
+    const seenByPeptide: Record<string, number> = {};
+    return todaysDoses.map((dose) => {
+      const indexForPeptide = seenByPeptide[dose.peptideId] ?? 0;
+      seenByPeptide[dose.peptideId] = indexForPeptide + 1;
+      const loggedCount = countLoggedToday(dose.peptideId, injectionLogs, todayISO);
+      return { dose, logged: indexForPeptide < loggedCount };
+    });
+  }, [upcomingDoses, injectionLogs, todayISO]);
 
   if (rows.length === 0) {
     return (
