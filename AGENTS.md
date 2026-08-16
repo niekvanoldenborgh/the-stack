@@ -26,6 +26,10 @@ These are load-bearing. Breaking one is a product defect, not a style choice. Al
 
 Shared components live in `src/ui/`, never in a route file. `RiskPicker` is used by onboarding, the recommendation screen and the Me tab.
 
+## Branching (trunk-based)
+
+**Commit to `main` by default.** The owner runs the app straight off `main`; anything stranded on a feature branch is invisible to them. Create another branch only when the work is genuinely risky or experimental, and merge it back into `main` the same day — do not let a branch accumulate days of work. THEA-47 was exactly this failure: the entire redesign sat unmerged on `thea-38-design-language` while `main` served the old app, and THEA-46 got fixed two different ways on the two branches. When you must branch, keep it short-lived and reconcile promptly. Push to `origin/main` when your change is green (`npm run typecheck`), not to a personal branch that only you can see.
+
 ## Gotchas
 
 - **Never put a bare string inside a `<View>`.** React Native throws on device while web only logs a warning, so this class of bug ships silently. `Callout` wraps text children automatically, including the array-of-strings case produced by `{'\n\n'}` interpolation.
