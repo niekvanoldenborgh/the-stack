@@ -56,16 +56,16 @@ export const colors = {
   // distinguishable under a colour-vision-deficiency simulation.
   critical: '#B3261E',
   criticalDim: '#FBEAE9',
-  high: '#B85C00',
+  high: '#A35200',
   highDim: '#FCEEDD',
-  moderate: '#8A6D00',
+  moderate: '#806400',
   moderateDim: '#FAF3D6',
   info: '#0369A1',
   infoDim: '#E3F2FB',
 
   evidenceA: '#0F766E',
   evidenceB: '#4D9A8F',
-  evidenceC: '#8A6D00',
+  evidenceC: '#806400',
   evidenceD: '#B3261E',
 } as const;
 
