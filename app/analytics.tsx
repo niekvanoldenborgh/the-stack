@@ -73,7 +73,7 @@ export default function AnalyticsScreen() {
     return (
       <Screen>
         <Spacer size={spacing.xl} />
-        <EmptyState title="No profile" body="Complete onboarding first." />
+        <EmptyState title="No profile" body="Complete onboarding first." illustration="onboarding" />
       </Screen>
     );
   }

@@ -119,6 +119,29 @@ export interface UserProfile {
   riskTolerance: RiskTolerance;
   /** User confirmed they read and accepted the safety disclaimer. */
   acceptedDisclaimerAt?: string;
+  /**
+   * A numeric target for one tracked metric, set entirely by the user on the
+   * Results screen. The app never suggests or judges a value here — see the
+   * doc comment on `Metric` in `domain/metrics.ts` — it only measures the
+   * distance already logged readings have covered toward a number the user
+   * chose themselves.
+   */
+  goalTarget?: GoalTarget;
+}
+
+/**
+ * `baseline` is a snapshot of the metric's latest reading at the moment the
+ * target was set, so progress is measured from where the user actually
+ * started rather than recomputed if they later edit or delete that reading.
+ */
+export interface GoalTarget {
+  /** Must match a `Metric.id` from `domain/metrics.ts` — targets are not offered for custom measures. */
+  metricId: string;
+  /** The number the user is aiming for, in the metric's native unit. */
+  value: number;
+  baseline: number;
+  /** ISO date the target was set. */
+  setAt: string;
 }
 
 // ---------------------------------------------------------------------------

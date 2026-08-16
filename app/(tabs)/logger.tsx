@@ -5,6 +5,7 @@ import { PEPTIDES, getPeptide, searchPeptides } from '../../src/domain/peptides'
 import { SEVERITY_MAX, SEVERITY_MIN, SIDE_EFFECT_OPTIONS, severityBand } from '../../src/domain/sideEffects';
 import type { Dose, DoseUnit, InjectionSite } from '../../src/domain/types';
 import { concentration, formatDose, reconstitute } from '../../src/engine/dosing';
+import { formatShort, today } from '../../src/lib/date';
 import { useAppStore } from '../../src/store/useAppStore';
 import { BodyFigure, INJECTION_SITE_LABELS } from '../../src/ui/BodyFigure';
 import {
@@ -12,20 +13,32 @@ import {
   Button,
   Callout,
   Caption,
-  Card,
   Data,
   Display,
-  Divider,
-  EmptyState,
-  ListRow,
   Row,
   Screen,
-  SectionTitle,
   Small,
   Spacer,
 } from '../../src/ui/components';
-import { colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
-import { formatShort, today } from '../../src/lib/date';
+import { List, ListItem, Section } from '../../src/ui/primitives';
+import { Segmented } from '../../src/ui/schedule';
+import { colors, fonts, radius, spacing, type SeverityTone, typography } from '../../src/ui/theme';
+
+/**
+ * Logger, redesigned THEA-40.
+ *
+ * The old layout was six-odd flat blocks separated by `SectionTitle` labels
+ * with no grouping beneath them — every field read at the same visual
+ * weight, whether it was "pick a compound" or "optional note". Related
+ * fields now share one `Section` panel (compound, dose, when-and-where,
+ * notes) so the screen reads as four decisions instead of a dozen
+ * ungrouped inputs, and both history lists use `List`/`ListItem` instead of
+ * the old bordered `ListRow`.
+ *
+ * None of the underlying logic changed: every safety comment below (no
+ * default unit, no default severity, warn-never-block on an over-max dose)
+ * is carried over verbatim from the pre-redesign screen.
+ */
 
 type Mode = 'injection' | 'side-effect';
 
@@ -51,37 +64,15 @@ export default function LoggerScreen() {
 
   return (
     <Screen>
-      <Display>Logger</Display>
+      <Caption color={colors.accent}>Log</Caption>
+      <Display style={{ marginTop: spacing.sm }}>Logger</Display>
       <Small style={{ marginTop: spacing.xs }}>
         Record what you actually did. Every number here is yours — the app never suggests a dose, it only does the
         arithmetic on what you type.
       </Small>
       <Spacer size={spacing.lg} />
 
-      <View style={styles.segments}>
-        {MODES.map((m) => {
-          const active = m.key === mode;
-          return (
-            <Pressable
-              key={m.key}
-              onPress={() => setMode(m.key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              style={[
-                styles.segment,
-                {
-                  backgroundColor: active ? colors.accentDim : colors.surface,
-                  borderColor: active ? colors.accent : colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.segmentLabel, { color: active ? colors.accent : colors.textMuted }]}>
-                {m.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <Segmented options={MODES.map((m) => ({ value: m.key, label: m.label }))} value={mode} onChange={setMode} />
 
       <Spacer size={spacing.xl} />
 
@@ -169,155 +160,177 @@ function InjectionLogger() {
 
   return (
     <View>
-      {/* Peptide */}
-      <Caption color={colors.textMuted}>Peptide</Caption>
-      <Spacer size={spacing.sm} />
-      {selectedPeptide ? (
-        <Row justify="space-between" style={styles.selectedPeptide}>
-          <View style={{ flex: 1 }}>
-            <Body>{selectedPeptide.name}</Body>
-            <Small>{selectedPeptide.dosing.note}</Small>
+      {/* Compound ----------------------------------------------------------- */}
+      <Section title="Compound">
+        {selectedPeptide ? (
+          <Row justify="space-between">
+            <View style={{ flex: 1 }}>
+              <Body>{selectedPeptide.name}</Body>
+              <Small>{selectedPeptide.dosing.note}</Small>
+            </View>
+            <Button label="Change" variant="ghost" onPress={() => setPeptideId(null)} />
+          </Row>
+        ) : (
+          <View>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder={`Search ${PEPTIDES.length} compounds`}
+              placeholderTextColor={colors.textFaint}
+              style={styles.input}
+              autoCorrect={false}
+            />
+            {results.length > 0 ? (
+              <List style={{ marginTop: spacing.md }}>
+                {results.map((p) => (
+                  <ListItem key={p.id} title={p.name} detail={p.summary} onPress={() => pickPeptide(p.id)} />
+                ))}
+              </List>
+            ) : null}
           </View>
-          <Button label="Change" variant="ghost" onPress={() => setPeptideId(null)} />
-        </Row>
-      ) : (
-        <View>
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder={`Search ${PEPTIDES.length} compounds`}
-            placeholderTextColor={colors.textFaint}
-            style={styles.input}
-            autoCorrect={false}
-          />
-          <Spacer size={spacing.sm} />
-          {results.map((p) => (
-            <ListRow key={p.id} title={p.name} subtitle={p.summary} onPress={() => pickPeptide(p.id)} />
-          ))}
-        </View>
-      )}
+        )}
+      </Section>
 
-      {/* Dose — user entered */}
-      <SectionTitle>Dose you injected</SectionTitle>
-      <Row gap={spacing.sm} align="center">
-        <TextInput
-          value={doseValue}
-          onChangeText={setDoseValue}
-          keyboardType="decimal-pad"
-          placeholder="0"
-          placeholderTextColor={colors.textFaint}
-          style={[styles.input, { flex: 1 }]}
-        />
-        <Row gap={spacing.xs}>
-          {DOSE_UNITS.map((u) => {
-            const active = u === doseUnit;
-            return (
-              <Pressable
-                key={u}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => setDoseUnit(u)}
-                style={[
-                  styles.unitPill,
-                  { backgroundColor: active ? colors.accentDim : colors.surface, borderColor: active ? colors.accent : colors.border },
-                ]}
-              >
-                <Text style={[styles.unitLabel, { color: active ? colors.accent : colors.textMuted }]}>
-                  {u === 'iu' ? 'IU' : u}
-                </Text>
-              </Pressable>
-            );
-          })}
+      {/* Dose — user entered -------------------------------------------------- */}
+      <Section title="Dose you injected" gap={spacing.md}>
+        <Row gap={spacing.sm} align="center">
+          <TextInput
+            value={doseValue}
+            onChangeText={setDoseValue}
+            keyboardType="decimal-pad"
+            placeholder="0"
+            placeholderTextColor={colors.textFaint}
+            style={[styles.input, { flex: 1 }]}
+          />
+          <Row gap={spacing.xs}>
+            {DOSE_UNITS.map((u) => {
+              const active = u === doseUnit;
+              return (
+                <Pressable
+                  key={u}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => setDoseUnit(u)}
+                  style={[
+                    styles.unitPill,
+                    { backgroundColor: active ? colors.accentDim : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+                  ]}
+                >
+                  <Text style={[styles.unitLabel, { color: active ? colors.accent : colors.textMuted }]}>
+                    {u === 'iu' ? 'IU' : u}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </Row>
         </Row>
-      </Row>
-      {unitMismatch && selectedPeptide ? (
-        <>
-          <Spacer size={spacing.sm} />
+        {unitMismatch && selectedPeptide ? (
           <Callout tone="moderate">
             {`Double-check the unit — ${selectedPeptide.name} is normally dosed in ${
               selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
             }, and you picked ${doseUnit === 'iu' ? 'IU' : doseUnit}. Logged as entered either way.`}
           </Callout>
-        </>
-      ) : null}
-      {overMax && selectedPeptide ? (
-        <>
-          <Spacer size={spacing.sm} />
+        ) : null}
+        {overMax && selectedPeptide ? (
           <Callout tone="moderate">
             {`Above the published maximum for ${selectedPeptide.name}: ${selectedPeptide.dosing.hardMax} ${
               selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
             } (${selectedPeptide.sources[0] ?? 'compound reference'}). This is logged as entered — nothing here is blocked or corrected.`}
           </Callout>
-        </>
-      ) : null}
-      <Spacer size={spacing.sm} />
-      <Caption color={colors.textFaint}>Amount drawn (syringe units, optional)</Caption>
-      <Spacer size={spacing.xs} />
-      <TextInput
-        value={drawn}
-        onChangeText={setDrawn}
-        keyboardType="decimal-pad"
-        placeholder="e.g. 10"
-        placeholderTextColor={colors.textFaint}
-        style={styles.input}
-      />
+        ) : null}
+        <View>
+          <Caption color={colors.textFaint}>Amount drawn (syringe units, optional)</Caption>
+          <Spacer size={spacing.xs} />
+          <TextInput
+            value={drawn}
+            onChangeText={setDrawn}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 10"
+            placeholderTextColor={colors.textFaint}
+            style={styles.input}
+          />
+        </View>
+      </Section>
 
-      {/* Time */}
-      <SectionTitle>Time</SectionTitle>
-      <TextInput
-        value={time}
-        onChangeText={setTime}
-        placeholder="HH:mm"
-        placeholderTextColor={colors.textFaint}
-        style={[styles.input, { width: 120 }]}
-      />
+      {/* When & where --------------------------------------------------------- */}
+      <Section title="When & where" gap={spacing.lg}>
+        <Row justify="space-between" align="center">
+          <Caption color={colors.textMuted}>Time</Caption>
+          <TextInput
+            value={time}
+            onChangeText={setTime}
+            placeholder="HH:mm"
+            placeholderTextColor={colors.textFaint}
+            style={[styles.input, { width: 120 }]}
+          />
+        </Row>
 
-      {/* Site */}
-      <SectionTitle>Injection site</SectionTitle>
-      <Small>Tap where you injected. Left and right are your own.</Small>
-      <Spacer size={spacing.md} />
-      <BodyFigure value={site} onChange={setSite} />
-      {site ? (
-        <Small style={{ textAlign: 'center', marginTop: spacing.sm, color: colors.text }}>
-          {INJECTION_SITE_LABELS[site]}
-        </Small>
-      ) : null}
+        <View>
+          <Caption color={colors.textMuted}>Injection site</Caption>
+          <Small style={{ marginTop: spacing.xs }}>Tap where you injected. Left and right are your own.</Small>
+          <Spacer size={spacing.md} />
+          <BodyFigure value={site} onChange={setSite} />
+          {site ? (
+            <Small style={{ textAlign: 'center', marginTop: spacing.sm, color: colors.text }}>
+              {INJECTION_SITE_LABELS[site]}
+            </Small>
+          ) : null}
+        </View>
 
-      {/* Pain */}
-      <SectionTitle>Pain level</SectionTitle>
-      <PainScale value={pain} onChange={setPain} />
+        <View>
+          <Caption color={colors.textMuted}>Pain level</Caption>
+          <Spacer size={spacing.sm} />
+          <PainScale value={pain} onChange={setPain} />
+        </View>
+      </Section>
 
-      {/* Notes */}
-      <SectionTitle>Notes</SectionTitle>
-      <TextInput
-        value={note}
-        onChangeText={setNote}
-        placeholder="Anything worth remembering (optional)"
-        placeholderTextColor={colors.textFaint}
-        style={[styles.input, styles.multiline]}
-        multiline
-      />
+      {/* Notes + save ----------------------------------------------------------- */}
+      <Section title="Notes" gap={spacing.md}>
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="Anything worth remembering (optional)"
+          placeholderTextColor={colors.textFaint}
+          style={[styles.input, styles.multiline]}
+          multiline
+        />
+        <Button label="Log injection" onPress={save} disabled={!canSave} />
+      </Section>
 
-      <Spacer size={spacing.lg} />
-      <Button label="Log injection" onPress={save} disabled={!canSave} />
-
-      {/* History */}
-      <SectionTitle>Recent injections</SectionTitle>
-      {injectionLogs.length === 0 ? (
-        <EmptyState title="Nothing logged yet" body="Your injections will appear here once you log one." />
-      ) : (
-        injectionLogs.slice(0, 20).map((log) => {
-          const p = getPeptide(log.peptideId);
-          return (
-            <ListRow
-              key={log.id}
-              title={`${p?.name ?? log.peptideId} · ${formatDose(log.dose)}`}
-              subtitle={`${formatShort(log.date)} ${log.time} · ${INJECTION_SITE_LABELS[log.site]} · pain ${log.painLevel}/10`}
-              right={<Button label="Delete" variant="ghost" onPress={() => removeInjection(log.id)} />}
-            />
-          );
-        })
-      )}
+      {/* History -------------------------------------------------------------- */}
+      <Section title="Recent injections" last>
+        {injectionLogs.length === 0 ? (
+          <Small>Your injections will appear here once you log one.</Small>
+        ) : (
+          <List>
+            {injectionLogs.slice(0, 20).map((log) => {
+              const p = getPeptide(log.peptideId);
+              return (
+                <ListItem
+                  key={log.id}
+                  title={p?.name ?? log.peptideId}
+                  detail={`${formatShort(log.date)} ${log.time} · ${INJECTION_SITE_LABELS[log.site]} · pain ${log.painLevel}/10`}
+                  meta={
+                    <Row gap={spacing.md}>
+                      <Data small color={colors.textMuted}>
+                        {formatDose(log.dose)}
+                      </Data>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${p?.name ?? log.peptideId} log from ${formatShort(log.date)}`}
+                        hitSlop={8}
+                        onPress={() => removeInjection(log.id)}
+                      >
+                        <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
+                      </Pressable>
+                    </Row>
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </Section>
     </View>
   );
 }
@@ -337,7 +350,7 @@ function PainScale({ value, onChange }: { value: number; onChange: (n: number) =
             onPress={() => onChange(n)}
             style={[
               styles.scaleDot,
-              { backgroundColor: active ? colors.accent : colors.surface, borderColor: active ? colors.accent : colors.border },
+              { backgroundColor: active ? colors.accent : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
             ]}
           >
             <Text style={[styles.scaleLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
@@ -366,7 +379,7 @@ function SeverityScale({ value, onChange }: { value: number | null; onChange: (n
             onPress={() => onChange(n)}
             style={[
               styles.scaleDot,
-              { backgroundColor: active ? colors.accent : colors.surface, borderColor: active ? colors.accent : colors.border },
+              { backgroundColor: active ? colors.accent : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
             ]}
           >
             <Text style={[styles.scaleLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
@@ -380,6 +393,8 @@ function SeverityScale({ value, onChange }: { value: number | null; onChange: (n
 // ---------------------------------------------------------------------------
 // Side-effect logger
 // ---------------------------------------------------------------------------
+
+const SEVERITY_ROW_TONE: SeverityTone = 'high';
 
 function SideEffectLogger() {
   const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
@@ -416,72 +431,96 @@ function SideEffectLogger() {
 
   return (
     <View>
-      <Caption color={colors.textMuted}>What did you feel? (pick any)</Caption>
-      <Spacer size={spacing.sm} />
-      <Row gap={spacing.sm} wrap>
-        {SIDE_EFFECT_OPTIONS.map((o) => {
-          const active = Boolean(selected[o.id]);
-          return (
-            <Pressable
-              key={o.id}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              onPress={() => toggle(o.id)}
-              style={[
-                styles.symptomChip,
-                { backgroundColor: active ? colors.accentDim : colors.surface, borderColor: active ? colors.accent : colors.border },
-              ]}
-            >
-              <Text style={[typography.small, { color: active ? colors.accent : colors.text }]}>{o.label}</Text>
-            </Pressable>
-          );
-        })}
-      </Row>
-
-      <SectionTitle>Something else</SectionTitle>
-      <TextInput
-        value={other}
-        onChangeText={setOther}
-        placeholder="Other symptom (optional)"
-        placeholderTextColor={colors.textFaint}
-        style={styles.input}
-      />
-
-      <SectionTitle>How bad, overall?</SectionTitle>
-      <Small>1 is barely there, 10 is the worst you've felt it. Pick a number — nothing is pre-selected.</Small>
-      <Spacer size={spacing.sm} />
-      <SeverityScale value={severity} onChange={setSeverity} />
-
-      <SectionTitle>Notes</SectionTitle>
-      <TextInput
-        value={note}
-        onChangeText={setNote}
-        placeholder="Context — timing, meals, dose changes (optional)"
-        placeholderTextColor={colors.textFaint}
-        style={[styles.input, styles.multiline]}
-        multiline
-      />
-
-      <Spacer size={spacing.lg} />
-      <Button label="Log how you feel" onPress={save} disabled={!canSave} />
-
-      <SectionTitle>Reconstitution ratio</SectionTitle>
-      <ReconstitutionCalculator />
-
-      <SectionTitle>Recent side-effects</SectionTitle>
-      {sideEffectLogs.length === 0 ? (
-        <EmptyState title="Nothing logged yet" body="Symptoms you log will appear here." />
-      ) : (
-        sideEffectLogs.slice(0, 30).map((log) => (
-          <ListRow
-            key={log.id}
-            title={log.label}
-            subtitle={`${formatShort(log.date)} · ${log.severity}/10${log.note ? ` · ${log.note}` : ''}`}
-            tone={severityBand(log.severity) === 'severe' ? 'high' : undefined}
-            right={<Button label="Delete" variant="ghost" onPress={() => removeSideEffect(log.id)} />}
+      <Section title="What did you feel?" gap={spacing.lg}>
+        <View>
+          <Small>Pick any that apply.</Small>
+          <Spacer size={spacing.sm} />
+          <Row gap={spacing.sm} wrap>
+            {SIDE_EFFECT_OPTIONS.map((o) => {
+              const active = Boolean(selected[o.id]);
+              return (
+                <Pressable
+                  key={o.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => toggle(o.id)}
+                  style={[
+                    styles.symptomChip,
+                    { backgroundColor: active ? colors.accentDim : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+                  ]}
+                >
+                  <Text style={[typography.small, { color: active ? colors.accent : colors.text }]}>{o.label}</Text>
+                </Pressable>
+              );
+            })}
+          </Row>
+        </View>
+        <View>
+          <Caption color={colors.textFaint}>Something else (optional)</Caption>
+          <Spacer size={spacing.xs} />
+          <TextInput
+            value={other}
+            onChangeText={setOther}
+            placeholder="Other symptom"
+            placeholderTextColor={colors.textFaint}
+            style={styles.input}
           />
-        ))
-      )}
+        </View>
+      </Section>
+
+      <Section title="How bad, overall?">
+        <Small>1 is barely there, 10 is the worst you&apos;ve felt it. Pick a number — nothing is pre-selected.</Small>
+        <Spacer size={spacing.sm} />
+        <SeverityScale value={severity} onChange={setSeverity} />
+      </Section>
+
+      <Section title="Notes" gap={spacing.md}>
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="Context — timing, meals, dose changes (optional)"
+          placeholderTextColor={colors.textFaint}
+          style={[styles.input, styles.multiline]}
+          multiline
+        />
+        <Button label="Log how you feel" onPress={save} disabled={!canSave} />
+      </Section>
+
+      <Section title="Reconstitution ratio">
+        <ReconstitutionCalculator />
+      </Section>
+
+      <Section title="Recent side-effects" last>
+        {sideEffectLogs.length === 0 ? (
+          <Small>Symptoms you log will appear here.</Small>
+        ) : (
+          <List>
+            {sideEffectLogs.slice(0, 30).map((log) => (
+              <ListItem
+                key={log.id}
+                title={log.label}
+                detail={`${formatShort(log.date)}${log.note ? ` · ${log.note}` : ''}`}
+                tone={severityBand(log.severity) === 'severe' ? SEVERITY_ROW_TONE : undefined}
+                meta={
+                  <Row gap={spacing.md}>
+                    <Data small color={colors.textMuted}>
+                      {log.severity}/10
+                    </Data>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${log.label} entry from ${formatShort(log.date)}`}
+                      hitSlop={8}
+                      onPress={() => removeSideEffect(log.id)}
+                    >
+                      <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
+                    </Pressable>
+                  </Row>
+                }
+              />
+            ))}
+          </List>
+        )}
+      </Section>
     </View>
   );
 }
@@ -506,7 +545,7 @@ function ReconstitutionCalculator() {
   const recon = conc && doseNum > 0 ? reconstitute(vial, water, { value: doseNum, unit: doseUnit }) : null;
 
   return (
-    <Card>
+    <View>
       <Small>
         Enter what is in the vial and how much water you added. The app works out the concentration — you tell it the
         dose, it never tells you.
@@ -540,12 +579,9 @@ function ReconstitutionCalculator() {
       </Row>
 
       {conc ? (
-        <View style={{ marginTop: spacing.md }}>
-          <Divider />
-          <Data>
-            {vial} mg in {water} mL = {conc.mgPerMl} mg/mL = {conc.mcgPerUnit} mcg per unit
-          </Data>
-        </View>
+        <Data style={{ marginTop: spacing.md }}>
+          {vial} mg in {water} mL = {conc.mgPerMl} mg/mL = {conc.mcgPerUnit} mcg per unit
+        </Data>
       ) : null}
 
       <Spacer size={spacing.md} />
@@ -571,7 +607,7 @@ function ReconstitutionCalculator() {
                 onPress={() => setDoseUnit(u)}
                 style={[
                   styles.unitPill,
-                  { backgroundColor: active ? colors.accentDim : colors.surface, borderColor: active ? colors.accent : colors.border },
+                  { backgroundColor: active ? colors.accentDim : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
                 ]}
               >
                 <Text style={[styles.unitLabel, { color: active ? colors.accent : colors.textMuted }]}>{u}</Text>
@@ -593,31 +629,15 @@ function ReconstitutionCalculator() {
           ) : null}
         </View>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  segments: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.md,
-  },
-  segmentLabel: {
-    fontFamily: fonts.sansMedium,
-    fontSize: 14,
-    letterSpacing: -0.1,
-  },
   input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceHigh,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderBright,
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md + 2,
@@ -627,15 +647,6 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 72,
     textAlignVertical: 'top',
-  },
-  selectedPeptide: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.sm,
   },
   unitPill: {
     minWidth: 44,
