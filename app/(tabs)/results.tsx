@@ -166,7 +166,11 @@ export default function ResultsScreen() {
         <Spacer size={spacing.xl} />
         <Display>Results</Display>
         <Spacer size={spacing.lg} />
-        <EmptyState title="No profile yet" body="Complete onboarding to pick goals, then track your progress here." />
+        <EmptyState
+          title="No profile yet"
+          body="Complete onboarding to pick goals, then track your progress here."
+          illustration="onboarding"
+        />
       </Screen>
     );
   }

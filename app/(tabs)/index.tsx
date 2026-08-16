@@ -65,7 +65,11 @@ export default function SummaryScreen() {
         <Spacer size={spacing.xl} />
         <Display>Summary</Display>
         <Spacer size={spacing.lg} />
-        <EmptyState title="No profile yet" body="Complete onboarding to see your overview, schedule and stack here." />
+        <EmptyState
+          title="No profile yet"
+          body="Complete onboarding to see your overview, schedule and stack here."
+          illustration="onboarding"
+        />
       </Screen>
     );
   }
@@ -429,6 +433,7 @@ function StackSection({
           title="No active stack"
           body="Build a stack to see it summarised here."
           action={<Button label="Build a stack" onPress={onBuildStack} />}
+          illustration="noStack"
         />
       </Section>
     );
