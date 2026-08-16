@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { View } from 'react-native';
 
 import { PEPTIDES, searchPeptides } from '../../src/domain/peptides';
-import { Badge, Body, Caption, ListRow, Row, Screen, Small, Spacer } from '../../src/ui/components';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
+import { Badge, Body, Caption, Row, Screen, Small, Spacer, TextField } from '../../src/ui/components';
+import { List, ListItem } from '../../src/ui/primitives';
+import { EVIDENCE_LABELS, LEGAL_LABELS, colors, spacing } from '../../src/ui/theme';
 
 /**
  * Compound library — every peptide the app knows about.
@@ -29,52 +30,40 @@ export default function LibraryScreen() {
         Every compound in the app, with full sources on each detail page. {PEPTIDES.length} total.
       </Body>
 
-      <Row
-        gap={spacing.sm}
-        style={{
-          marginTop: spacing.lg,
-          marginBottom: spacing.md,
-          backgroundColor: colors.surface,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.border,
-          paddingHorizontal: spacing.md,
-        }}
-      >
-        <Ionicons name="search" size={18} color={colors.textFaint} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search by name or alias"
-          placeholderTextColor={colors.textFaint}
-          autoCorrect={false}
-          autoCapitalize="none"
-          style={[typography.body, { flex: 1, color: colors.text, paddingVertical: spacing.md, fontFamily: fonts.sans }]}
-        />
-      </Row>
+      <TextField
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search by name or alias"
+        autoCorrect={false}
+        autoCapitalize="none"
+        leading={<Ionicons name="search" size={18} color={colors.textFaint} />}
+        style={{ marginTop: spacing.lg, marginBottom: spacing.md }}
+      />
 
       {results.length === 0 ? (
         <View style={{ paddingVertical: spacing.xl, alignItems: 'center' }}>
           <Small>No compounds match “{query}”.</Small>
         </View>
       ) : (
-        results.map((peptide) => (
-          <ListRow
-            key={peptide.id}
-            title={peptide.name}
-            subtitle={peptide.summary}
-            onPress={() => router.push(`/peptide/${peptide.id}`)}
-            right={
-              <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                <Badge
-                  label={`Ev ${peptide.evidence}`}
-                  tone={peptide.evidence === 'A' ? 'accent' : peptide.evidence === 'D' ? 'critical' : 'moderate'}
-                />
-                <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
-              </View>
-            }
-          />
-        ))
+        <List>
+          {results.map((peptide) => (
+            <ListItem
+              key={peptide.id}
+              title={peptide.name}
+              detail={peptide.summary}
+              onPress={() => router.push(`/peptide/${peptide.id}`)}
+              meta={
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Badge
+                    label={`Ev ${peptide.evidence}`}
+                    tone={peptide.evidence === 'A' ? 'accent' : peptide.evidence === 'D' ? 'critical' : 'moderate'}
+                  />
+                  <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+                </View>
+              }
+            />
+          ))}
+        </List>
       )}
 
       <Spacer size={spacing.md} />

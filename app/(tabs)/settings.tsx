@@ -6,11 +6,19 @@ import { GOALS_BY_ID } from '../../src/domain/goals';
 import { useAppStore } from '../../src/store/useAppStore';
 import { formatLength, formatMass } from '../../src/lib/units';
 import { cancelAllReminders } from '../../src/lib/notifications';
-import { Caption, Display, ListRow, Screen, Small, Spacer } from '../../src/ui/components';
+import { Display, Screen, Small, Spacer } from '../../src/ui/components';
+import { List, ListItem, Section } from '../../src/ui/primitives';
 import { colors, spacing } from '../../src/ui/theme';
 
 /**
- * Settings hub (THEA-4 page 5). Each row opens its own screen.
+ * Settings hub (THEA-4 page 5, design transform THEA-52). Each row opens its
+ * own screen.
+ *
+ * Rebuilt on `Section`/`List`/`ListItem` (THEA-38 primitives) — this screen
+ * predated that redesign and was the one surface still on the flat bordered
+ * `ListRow`, so its five groups read as a wall of identical boxes next to
+ * Summary/Logger/Results reading as fixed hierarchy. Grouping is unchanged;
+ * only the anatomy is.
  *
  * The four data/account rows — Privacy, Manage Data, Lock App and Delete
  * Account — are handled with extra care: Lock App is non-destructive (it only
@@ -89,63 +97,78 @@ export default function SettingsScreen() {
       <Spacer size={spacing.md} />
       <Display>Settings</Display>
 
-      <Caption color={colors.textMuted}>Profile</Caption>
-      <Spacer size={spacing.sm} />
-      <ListRow title="Goals" subtitle={goalSummary} right={<Chevron />} onPress={() => router.push('/settings/goals')} />
-      <ListRow title="My Info" subtitle={infoSummary} right={<Chevron />} onPress={() => router.push('/settings/my-info')} />
-      <ListRow
-        title="Measurement units"
-        subtitle={`${settings.massUnit === 'kg' ? 'Kilograms' : 'Pounds'} · ${settings.lengthUnit === 'cm' ? 'Centimetres' : 'Feet & inches'}`}
-        right={<Chevron />}
-        onPress={() => router.push('/settings/units')}
-      />
+      <Section title="Profile">
+        <List>
+          <ListItem title="Goals" detail={goalSummary} meta={<Chevron />} onPress={() => router.push('/settings/goals')} />
+          <ListItem title="My Info" detail={infoSummary} meta={<Chevron />} onPress={() => router.push('/settings/my-info')} />
+          <ListItem
+            title="Measurement units"
+            detail={`${settings.massUnit === 'kg' ? 'Kilograms' : 'Pounds'} · ${settings.lengthUnit === 'cm' ? 'Centimetres' : 'Feet & inches'}`}
+            meta={<Chevron />}
+            onPress={() => router.push('/settings/units')}
+          />
+        </List>
+      </Section>
 
-      <Caption color={colors.textMuted}>Reminders</Caption>
-      <Spacer size={spacing.sm} />
-      <ListRow title="Alarm" subtitle={alarmSummary} right={<Chevron />} onPress={() => router.push('/settings/alarm')} />
-      <ListRow
-        title="Notifications"
-        subtitle={`${activeNotifications} of 4 categories on`}
-        right={<Chevron />}
-        onPress={() => router.push('/settings/notifications')}
-      />
+      <Section title="Reminders">
+        <List>
+          <ListItem title="Alarm" detail={alarmSummary} meta={<Chevron />} onPress={() => router.push('/settings/alarm')} />
+          <ListItem
+            title="Notifications"
+            detail={`${activeNotifications} of 4 categories on`}
+            meta={<Chevron />}
+            onPress={() => router.push('/settings/notifications')}
+          />
+        </List>
+      </Section>
 
-      <Caption color={colors.textMuted}>App</Caption>
-      <Spacer size={spacing.sm} />
-      <ListRow
-        title="Theme"
-        subtitle={settings.theme === 'dark' ? 'Dark' : 'System'}
-        right={<Chevron />}
-        onPress={() => router.push('/settings/theme')}
-      />
-      <ListRow
-        title="Library"
-        subtitle="Every compound, with sources"
-        right={<Chevron />}
-        onPress={() => router.push('/settings/library')}
-      />
+      <Section title="App">
+        <List>
+          <ListItem
+            title="Theme"
+            detail={settings.theme === 'dark' ? 'Dark' : 'System'}
+            meta={<Chevron />}
+            onPress={() => router.push('/settings/theme')}
+          />
+          <ListItem
+            title="Library"
+            detail="Every compound, with sources"
+            meta={<Chevron />}
+            onPress={() => router.push('/settings/library')}
+          />
+        </List>
+      </Section>
 
-      <Caption color={colors.textMuted}>Data & privacy</Caption>
-      <Spacer size={spacing.sm} />
-      <ListRow title="Privacy" subtitle="How your data is stored" right={<Chevron />} onPress={() => router.push('/settings/privacy')} />
-      <ListRow title="Manage data" subtitle="Export as PDF, CSV or JSON" right={<Chevron />} onPress={() => router.push('/settings/manage-data')} />
+      <Section title="Data & privacy">
+        <List>
+          <ListItem title="Privacy" detail="How your data is stored" meta={<Chevron />} onPress={() => router.push('/settings/privacy')} />
+          <ListItem
+            title="Manage data"
+            detail="Export as PDF, CSV or JSON"
+            meta={<Chevron />}
+            onPress={() => router.push('/settings/manage-data')}
+          />
+        </List>
+      </Section>
 
-      <Caption color={colors.textMuted}>Account</Caption>
-      <Spacer size={spacing.sm} />
-      <ListRow
-        title="Lock app"
-        subtitle="Re-locks the safety disclaimer. Your data stays on this device."
-        onPress={onLogOut}
-        right={<Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />}
-      />
-      <ListRow
-        title="Delete account"
-        tone="critical"
-        right={<Ionicons name="trash-outline" size={18} color={colors.critical} />}
-        onPress={() => router.push('/settings/delete-account')}
-      />
+      <Section title="Account" last>
+        <List>
+          <ListItem
+            title="Lock app"
+            detail="Re-locks the safety disclaimer. Your data stays on this device."
+            onPress={onLogOut}
+            meta={<Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />}
+          />
+          <ListItem
+            title="Delete account"
+            tone="critical"
+            meta={<Ionicons name="trash-outline" size={18} color={colors.critical} />}
+            onPress={() => router.push('/settings/delete-account')}
+          />
+        </List>
+      </Section>
 
-      <View style={{ marginTop: spacing.xl, alignItems: 'center' }}>
+      <View style={{ marginTop: spacing.md, alignItems: 'center' }}>
         <Small>The Stack — educational use only. Not medical advice.</Small>
       </View>
     </Screen>
