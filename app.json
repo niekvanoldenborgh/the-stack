@@ -44,7 +44,7 @@
       [
         "expo-notifications",
         {
-          "color": "#C9F24D",
+          "color": "#0F766E",
           "defaultChannel": "peptide-reminders"
         }
       ],

@@ -45,8 +45,10 @@ Rendered whole it is unreadable — screenshot individual screens instead. Get
 its children with `get_metadata` on `3032:2305` first, then target the progress
 tracking and workout log screens.
 
-Dark themed, purple with an acid-lime accent very close to this app's own
-`#C9F24D`.
+Dark themed, purple with an acid-lime accent — close to this app's
+pre-redesign lime accent (`#C9F24D`). The current app accent is teal
+(`#0F766E`, Clinical Light, THEA-56), so this kit no longer reads as an
+accent-colour match, only a layout/IA reference.
 
 ---
 

@@ -120,19 +120,18 @@ The `engine/` and `domain/` layers import nothing from React Native. That is wha
 
 The reference points are instrument readouts and safety data sheets, not wellness apps. This is software that shows you microgram figures and tells you when to stop, so it should read like something calibrated.
 
-**Typeface — three families, split by job.** All bundled locally, all SIL OFL.
+**Typeface — one family, split by weight, plus a dedicated mono.** All bundled locally, all SIL OFL. Replaces the earlier Bricolage Grotesque + IBM Plex Sans split as of THEA-56 direction A ("Clinical Light").
 
 | Role | Family | Why |
 |---|---|---|
-| Display | **Bricolage Grotesque** 800 / 200 | Used at both ends of its weight axis: heavy for headings, hairline for large figures. Enough character to give the app a voice |
-| Reading text | **IBM Plex Sans** 400 / 600 | Humanist, technical lineage, holds up at 13px |
+| Display & reading text | **Inter** 700 / 600 / 400 | One family from the largest metric to the smallest label — 700 for headings, 600 where the old theme used a "medium" weight, 400 for reading text |
 | Every quantity | **IBM Plex Mono** 500 / 600 | Doses, units, syringe counts and section labels. Figures line up in columns and digits do not shift width as a value animates |
 
 Imported per weight, never through a package's barrel entry — those eagerly require every face they ship (Inter's costs ~6 MB) and Metro does not tree-shake them.
 
 Each weight is a separate font family, so **`fontWeight` must never be set alongside `fontFamily`** — doing both makes Android fall back to the system font and makes react-native-web paint a synthetic faux-bold over an already-bold face. Use `fonts.sansMedium` from `src/ui/theme.ts` instead.
 
-**Colour.** Ink (`#0A0A0C`) and bone (`#EDEAE3`) rather than black and white, which is easier over long reading and stops the dark theme reading as a default. One acid-lime accent (`#C9F24D`), deliberately kept clear of the severity scale — colour is load-bearing information here, so the brand colour must never be mistakable for a warning colour. Severity runs rose → orange → amber → sky.
+**Colour.** Ink (`#14171F`), not black, on white and near-white (`#FFFFFF`/`#F6F7F9`), rather than true black and white — easier over long reading and stays short of #000/#FFF harshness while still reading as unambiguously light. One deep-teal accent (`#0F766E`), deliberately kept clear of the severity scale — colour is load-bearing information here, so the brand colour must never be mistakable for a warning colour. Severity runs rose → orange → amber → sky, re-tuned for AA contrast on white.
 
 **Motion.** One orchestrated cascade per screen (`<Reveal index>`), not micro-interactions everywhere. Built on the core `Animated` API rather than Reanimated layout animations, which are the least reliable part of a single-bundle iOS/Android/web story. Two failure modes are guarded: `useNativeDriver` is platform-gated because it silently no-ops on web, and a hidden browser tab (where `requestAnimationFrame` never fires) resolves straight to the final state — an animation that gates opacity must never be able to strand content invisible.
 
@@ -146,7 +145,7 @@ Charts carry their **denominator**. A `track` prop draws the reference quantity 
 
 Strength trends are **small multiples** — one sparkline per lift — rather than one multi-series chart. That was a deliberate reversal: a four-hue categorical palette validated against the dark surface failed on two pairs (orange↔lime at ΔE 0.8 for deuteranopia, violet↔blue below the normal-vision floor). Small multiples need no categorical palette at all, so there is no colourblind collision to design around, and each lift stays directly labelled — which also reads far better at 375px wide.
 
-**Scheduling patterns.** The dashboard's week selector, the time-gutter timeline, the inline metadata chips and the compact confirm/dismiss actions are adapted from the appointment screens of the [Medical Health Mobile App / Dermatology UI Kit](https://www.figma.com/community) (Figma Community), pulled in over the Figma MCP. The layout ideas transferred; the palette did not — that kit is blue-on-white and this app is ink and lime, so every piece is rebuilt on our own tokens in `src/ui/schedule.tsx`.
+**Scheduling patterns.** The dashboard's week selector, the time-gutter timeline, the inline metadata chips and the compact confirm/dismiss actions are adapted from the appointment screens of the [Medical Health Mobile App / Dermatology UI Kit](https://www.figma.com/community) (Figma Community), pulled in over the Figma MCP. The layout ideas transferred; the palette did not — that kit is blue-on-white and this app is ink and teal, so every piece is rebuilt on our own tokens in `src/ui/schedule.tsx`.
 
 The one that changed the app most is the week strip. The dashboard previously showed only today, which made it impossible to see a dose coming or check what was missed yesterday without leaving the screen — and it hid the fact that a 5×/week compound simply is not there at the weekend.
 
