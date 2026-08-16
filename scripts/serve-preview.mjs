@@ -16,9 +16,17 @@
  *
  * The root path ("/") serves a phone-bezel wrapper, not the app directly: a
  * non-technical reviewer opens the URL and sees a phone-shaped mobile POV
- * with no DevTools required to simulate one. The app itself is unchanged —
- * `dist/` is served byte-for-byte at APP_PATH, and the wrapper just embeds it
- * in a fixed-width iframe. This script is dev/demo-only tooling; it never
+ * with no DevTools required to simulate one.
+ *
+ * THEA-44: the app used to be nested under a subpath ("/__preview-app__/")
+ * on this same server and origin, embedded via iframe. That broke expo-router:
+ * its web route matcher compares `window.location.pathname` straight against
+ * the route table with no base-path awareness, so every route — including
+ * the subpath's own root — hit the `Unmatched Route` fallback instead of the
+ * real screen. Fix: `dist/` is served byte-for-byte at the *root* of its own
+ * origin (a second listener, APP_PORT), so expo-router sees exactly the
+ * pathnames it expects. The wrapper's iframe points at that origin instead of
+ * nesting a path on its own. This script is dev/demo-only tooling; it never
  * touches `dist/` output or anything shipped in production.
  */
 import { createServer } from 'node:http';
@@ -30,6 +38,10 @@ const ROOT = new URL('../dist/', import.meta.url).pathname;
 // included) already export `PORT` for their own listener, and picking that up
 // silently would collide with it instead of the intended dev machine port.
 const PORT = Number(process.env.PREVIEW_PORT) || 4300;
+// The app itself gets its own port/origin so expo-router sees it mounted at
+// true root (see THEA-44 note above) — defaults to PORT + 1, overridable in
+// case that also collides with something on the reviewer's machine.
+const APP_PORT = Number(process.env.PREVIEW_APP_PORT) || PORT + 1;
 // Defaults to loopback so nothing is exposed by accident. Reviewers running
 // inside a container who reach the app via a *mapped/published* port must set
 // PREVIEW_HOST=0.0.0.0 — a 127.0.0.1 listener is invisible to Docker's port
@@ -37,10 +49,6 @@ const PORT = Number(process.env.PREVIEW_PORT) || 4300;
 // port-forward / VS Code remote), which tunnels to loopback and works as-is.
 const HOST = process.env.PREVIEW_HOST || '127.0.0.1';
 
-// Marker path the phone-frame wrapper points its iframe at. Asset URLs in
-// `dist/index.html` are root-absolute (e.g. "/_expo/static/..."), so serving
-// the same index.html under this path instead of "/" doesn't break anything.
-const APP_PATH = '/__preview-app__/';
 // iPhone 14/15-ish CSS viewport — a stand-in mobile width, not a claim about
 // any specific device.
 const DEVICE_WIDTH = 393;
@@ -105,8 +113,16 @@ function phoneFrameHtml() {
     <div class="label">The Stack — reviewer preview (${DEVICE_WIDTH}×${DEVICE_HEIGHT})</div>
     <div class="frame">
       <div class="notch"></div>
-      <iframe src="${APP_PATH}" title="The Stack app preview"></iframe>
+      <iframe id="app-frame" title="The Stack app preview"></iframe>
     </div>
+    <script>
+      // Reuse whatever hostname got the reviewer here (localhost, a
+      // forwarded/tunnelled name, a published container IP — see PREVIEW_HOST
+      // in serve-preview.mjs) and just swap the port, so the app's origin is
+      // its own true root rather than a subpath of this page's origin.
+      document.getElementById('app-frame').src =
+        window.location.protocol + '//' + window.location.hostname + ':${APP_PORT}/';
+    </script>
   </body>
 </html>`;
 }
@@ -137,23 +153,17 @@ try {
   process.exit(1);
 }
 
-const server = createServer(async (req, res) => {
+// Serves `dist/` byte-for-byte at the root of its own origin (APP_PORT).
+// Deliberately the *only* place that touches ROOT — the wrapper server never
+// reads from `dist/`, so there's exactly one code path that can nest the app
+// under a subpath by accident.
+async function serveDist(req, res) {
   try {
     const url = new URL(req.url ?? '/', `http://${HOST}`);
 
-    // Root serves the phone-frame wrapper, not the app — the app itself
-    // lives at APP_PATH, embedded in the wrapper's iframe.
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-      res.end(phoneFrameHtml());
-      return;
-    }
-
     // Strip query/hash and reject path traversal before touching the filesystem.
     let safePath = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
-    if (safePath === normalize(APP_PATH) || safePath === normalize(APP_PATH).slice(0, -1)) {
-      safePath = 'index.html';
-    } else if (safePath.endsWith('/')) {
+    if (safePath.endsWith('/')) {
       safePath += 'index.html';
     }
 
@@ -178,24 +188,43 @@ const server = createServer(async (req, res) => {
     res.end('Internal server error');
     console.error(err);
   }
+}
+
+const wrapperServer = createServer((req, res) => {
+  const url = new URL(req.url ?? '/', `http://${HOST}`);
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(phoneFrameHtml());
+    return;
+  }
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('Not found');
 });
 
-server.listen(PORT, HOST, () => {
-  // When bound to 0.0.0.0 the wildcard address isn't directly openable; point
-  // the reviewer at a real hostname they can click instead.
-  const url = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
-  console.log(`\nThe Stack — reviewer preview\n`);
-  console.log(`  ${url}\n`);
-  console.log(`Opens straight into a ${DEVICE_WIDTH}×${DEVICE_HEIGHT} phone frame — no DevTools needed.`);
-  console.log('Ctrl+C to stop.\n');
-});
+const appServer = createServer(serveDist);
 
-server.on('error', (err) => {
+function reportListenError(name, port, err) {
   if (err.code === 'EADDRINUSE') {
     console.error(
-      `\nPort ${PORT} is already in use. Set PREVIEW_PORT to something else, e.g.:\n  PREVIEW_PORT=4301 npm run preview\n`,
+      `\nPort ${port} is already in use (${name}). Set PREVIEW_PORT (and/or PREVIEW_APP_PORT) to something else, e.g.:\n  PREVIEW_PORT=4301 npm run preview\n`,
     );
     process.exit(1);
   }
   throw err;
+}
+
+wrapperServer.on('error', (err) => reportListenError('wrapper', PORT, err));
+appServer.on('error', (err) => reportListenError('app', APP_PORT, err));
+
+appServer.listen(APP_PORT, HOST, () => {
+  wrapperServer.listen(PORT, HOST, () => {
+    // When bound to 0.0.0.0 the wildcard address isn't directly openable; point
+    // the reviewer at a real hostname they can click instead.
+    const url = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
+    console.log(`\nThe Stack — reviewer preview\n`);
+    console.log(`  ${url}\n`);
+    console.log(`Opens straight into a ${DEVICE_WIDTH}×${DEVICE_HEIGHT} phone frame — no DevTools needed.`);
+    console.log(`(App itself serves at true root on port ${APP_PORT}, so expo-router's client-side routing works.)`);
+    console.log('Ctrl+C to stop.\n');
+  });
 });

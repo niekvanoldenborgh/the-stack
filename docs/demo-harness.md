@@ -21,19 +21,30 @@ The Stack — reviewer preview
 
   http://127.0.0.1:4300
 
-Open that URL in a browser. Ctrl+C to stop.
+Opens straight into a 393×852 phone frame — no DevTools needed.
+(App itself serves at true root on port 4301, so expo-router's client-side routing works.)
+Ctrl+C to stop.
 ```
 
-Open the printed URL. There is nothing else to start, no browser to
-auto-launch, no dev server to keep alive — `dist/` is a plain static build and
-`scripts/serve-preview.mjs` is a ~60-line, zero-dependency Node HTTP server
-(no `serve`/`http-server` package needed). Client-side routing means any path
-falls back to the app shell, so refreshing or deep-linking into a tab won't
-404.
+Open the printed URL: it's a phone-bezel wrapper, not the app directly, so a
+non-technical reviewer sees a mobile POV with no DevTools required to
+simulate one. The wrapper embeds the actual app in an iframe pointed at a
+*second* origin (`PORT + 1` by default) — `dist/` is served byte-for-byte at
+the root of that origin, not nested under a subpath of the wrapper's. That
+matters because expo-router's web route matcher compares
+`window.location.pathname` straight against its route table with no
+base-path awareness; nesting the app under a subpath (as this used to do,
+THEA-44) made every route resolve to `Unmatched Route` instead of the real
+screen. There is nothing else to start, no browser to auto-launch, no dev
+server to keep alive — both listeners in `scripts/serve-preview.mjs` are a
+zero-dependency Node HTTP server (no `serve`/`http-server` package needed).
+Client-side routing means any path on the app origin falls back to the app
+shell, so refreshing or deep-linking into a tab won't 404.
 
-If port 4300 is taken, override it: `PREVIEW_PORT=4301 npm run preview` (don't
-use the plain `PORT` env var — some hosts already reserve it for their own
-listener, which is exactly the collision this avoids).
+If port 4300 (or its app-origin sibling, 4301) is taken, override them:
+`PREVIEW_PORT=4310 PREVIEW_APP_PORT=4311 npm run preview` (don't use the
+plain `PORT` env var — some hosts already reserve it for their own listener,
+which is exactly the collision this avoids).
 
 This is why `npm run preview` is preferred over `npm run demo` for review: it
 has nothing left to compile or bundle at review time, so there's no live Metro
