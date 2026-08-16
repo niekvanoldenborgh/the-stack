@@ -29,7 +29,14 @@ const {
   reevaluateStacks,
 } = require('../.test-build/engine/safety');
 const { explainExclusions, generateStack } = require('../.test-build/engine/recommend');
-const { generateSchedule, phaseOn, spreadDays } = require('../.test-build/engine/cycle');
+const {
+  buildCyclePhases,
+  cyclePlanProgressPct,
+  generateSchedule,
+  groupPhasesByPeptide,
+  phaseOn,
+  spreadDays,
+} = require('../.test-build/engine/cycle');
 const { generateProgram, estimatedOneRepMax, suggestNextLoad } = require('../.test-build/engine/workout');
 const { getExercise } = require('../.test-build/domain/exercises');
 const {
@@ -880,6 +887,42 @@ describe('cycle planning', () => {
       safety: { interactions: [], contraindications: [], goalConflicts: [], notices: [], sideEffects: [], redFlags: [], monitoring: [], blocking: false, riskScore: 0 },
     };
     assert.equal(generateSchedule(stack, '2026-01-05', '2026-01-20').length, 0);
+  });
+
+  it('reports 0% on day one and 100% once the plan has ended', () => {
+    const stack = {
+      id: 'test',
+      name: 'test',
+      origin: 'generated',
+      createdAt: '',
+      startDate: '2026-01-05',
+      items: [item],
+      goals: ['build_muscle'],
+      safety: { interactions: [], contraindications: [], goalConflicts: [], notices: [], sideEffects: [], redFlags: [], monitoring: [], blocking: false, riskScore: 0 },
+    };
+    const phases = groupPhasesByPeptide(buildCyclePhases(stack)).get('ipamorelin');
+    const start = new Date(phases[0].startDate);
+    const end = new Date(phases[phases.length - 1].endDate);
+    const totalDays = (end - start) / 86400000 + 1;
+    const midDate = new Date(start.getTime() + Math.floor(totalDays / 2) * 86400000).toISOString().slice(0, 10);
+
+    // Day one — barely started, not 0 (today itself counts as elapsed).
+    const day1 = cyclePlanProgressPct(phases, phases[0].startDate);
+    assert.ok(day1 > 0 && day1 < 5, `expected day1 to be a small positive percent, got ${day1}`);
+
+    // Exactly at the midpoint of the whole plan.
+    const midway = cyclePlanProgressPct(phases, midDate);
+    assert.ok(midway > 45 && midway < 55, `expected midway to be near 50%, got ${midway}`);
+
+    // Long after the plan's last phase ends — clamped to 100, not overshooting.
+    const wayAfter = cyclePlanProgressPct(phases, '2099-01-01');
+    assert.equal(wayAfter, 100);
+
+    assert.ok(totalDays > 0);
+  });
+
+  it('returns null progress when there is no phase data', () => {
+    assert.equal(cyclePlanProgressPct([], '2026-01-05'), null);
   });
 });
 

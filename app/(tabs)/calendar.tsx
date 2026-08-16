@@ -5,7 +5,7 @@ import { Pressable, View } from 'react-native';
 import { getPeptide } from '../../src/domain/peptides';
 import { severityBand } from '../../src/domain/sideEffects';
 import type { PhaseKind, ScheduledDose } from '../../src/domain/types';
-import { buildCyclePhases, generateSchedule } from '../../src/engine/cycle';
+import { buildCyclePhases, generateSchedule, groupPhasesByPeptide } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import {
   addDays,
@@ -50,10 +50,15 @@ import { colors, radius, spacing, type SeverityTone } from '../../src/ui/theme';
  * injections still coming, and the side effects you have recorded. A week
  * selector scrubs between days; filters hide any of the three streams, and a
  * per-compound filter narrows the injection streams to one peptide at a time.
+ * Filters, week strip and the selected day sit first — that is what a user
+ * opens this tab to do (THEA-40 owner feedback: this screen is for "what's
+ * happening", not reference material).
  *
- * Above the timeline, each compound's cycle is drawn as a phase bar — loading,
- * fully on, rotating off — so the shape of a plan that can run past new year is
- * visible at a glance rather than reconstructed from a list of dates.
+ * Below the day-to-day, each compound's cycle is drawn as a phase bar —
+ * loading, fully on, rotating off — so the shape of a plan that can run past
+ * new year is visible at a glance rather than reconstructed from a list of
+ * dates. A per-peptide progress bar with the same "how far through" figure
+ * also lives on Summary, next to the current stack (`app/(tabs)/index.tsx`).
  */
 
 // ---------------------------------------------------------------------------
@@ -145,15 +150,7 @@ export default function CalendarScreen() {
 
   const cyclePhases = useMemo(() => (stack ? buildCyclePhases(stack) : []), [stack]);
 
-  const phasesByPeptide = useMemo(() => {
-    const map = new Map<string, typeof cyclePhases>();
-    for (const phase of cyclePhases) {
-      const list = map.get(phase.peptideId) ?? [];
-      list.push(phase);
-      map.set(phase.peptideId, list);
-    }
-    return map;
-  }, [cyclePhases]);
+  const phasesByPeptide = useMemo(() => groupPhasesByPeptide(cyclePhases), [cyclePhases]);
 
   if (!stack) {
     return (
@@ -239,21 +236,7 @@ export default function CalendarScreen() {
       </Body>
       <Spacer size={spacing.lg} />
 
-      {/* Cycle overview ----------------------------------------------------- */}
-      <Section title="Stack cycle" gap={spacing.xl}>
-        {stackPeptideIds.map((id, index) => {
-          const phases = phasesByPeptide.get(id);
-          if (!phases || phases.length === 0) return null;
-          return (
-            <View key={id}>
-              {index > 0 ? <Divider style={{ marginBottom: spacing.xl }} /> : null}
-              <CyclePhaseBar name={getPeptide(id)?.name ?? id} phases={phases} />
-            </View>
-          );
-        })}
-      </Section>
-
-      {/* Filters ------------------------------------------------------------ */}
+      {/* Filters — first thing you see: what to look at before how the cycle's going. */}
       <Section title="Show" gap={spacing.sm}>
         <Row gap={spacing.xs} wrap>
           <FilterPill icon="checkmark-done" label="Injections" active={showPast} onPress={() => setShowPast((v) => !v)} />
@@ -293,7 +276,7 @@ export default function CalendarScreen() {
       </Section>
 
       {/* Selected day ------------------------------------------------------- */}
-      <Section title={formatLong(selected)} last>
+      <Section title={formatLong(selected)}>
         {selectedEvents.length === 0 ? (
           <Small style={{ textAlign: 'center' }}>Nothing on this day with the current filters.</Small>
         ) : (
@@ -315,6 +298,20 @@ export default function CalendarScreen() {
             ),
           )
         )}
+      </Section>
+
+      {/* Cycle overview — reference material, so it sits below the day-to-day. */}
+      <Section title="Stack cycle" gap={spacing.xl} last>
+        {stackPeptideIds.map((id, index) => {
+          const phases = phasesByPeptide.get(id);
+          if (!phases || phases.length === 0) return null;
+          return (
+            <View key={id}>
+              {index > 0 ? <Divider style={{ marginBottom: spacing.xl }} /> : null}
+              <CyclePhaseBar name={getPeptide(id)?.name ?? id} phases={phases} />
+            </View>
+          );
+        })}
       </Section>
     </Screen>
   );

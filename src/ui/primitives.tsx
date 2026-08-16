@@ -186,6 +186,7 @@ export function ListItem({
   tone,
   checked,
   onPress,
+  children,
 }: {
   /** A lucide icon element, e.g. `<Syringe size={16} color={colors.textMuted} />`. */
   icon?: ReactNode;
@@ -197,6 +198,8 @@ export function ListItem({
   /** Renders a checklist mark instead of a dot/icon; for monitoring-style lists. */
   checked?: boolean;
   onPress?: () => void;
+  /** Extra content below `detail`, full width within the row — e.g. a progress bar. */
+  children?: ReactNode;
 }) {
   const markColor = tone ? toneColors(tone).fg : colors.accent;
   const Wrapper = onPress ? Pressable : View;
@@ -230,6 +233,7 @@ export function ListItem({
             {meta}
           </Row>
           {detail ? <Small style={{ marginTop: 2 }}>{detail}</Small> : null}
+          {children ? <View style={{ marginTop: spacing.sm }}>{children}</View> : null}
         </View>
       </Row>
     </Wrapper>

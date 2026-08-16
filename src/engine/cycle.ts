@@ -81,6 +81,34 @@ function plannedCycles(item: StackItem): number {
   return Math.max(1, max);
 }
 
+/** Groups a flat phase list (from `buildCyclePhases`) by peptide, preserving chronological order. */
+export function groupPhasesByPeptide(phases: CyclePhase[]): Map<string, CyclePhase[]> {
+  const map = new Map<string, CyclePhase[]>();
+  for (const phase of phases) {
+    const list = map.get(phase.peptideId);
+    if (list) list.push(phase);
+    else map.set(phase.peptideId, [phase]);
+  }
+  return map;
+}
+
+/**
+ * Percent complete through one compound's full planned timeline — titration
+ * through the last washout — given that peptide's own phases (already
+ * filtered/grouped, e.g. via `groupPhasesByPeptide`). Clamped to [0, 100], so
+ * a plan that has already ended reads as 100% rather than overshooting it.
+ * Returns null when there is no phase data to measure against.
+ */
+export function cyclePlanProgressPct(phases: CyclePhase[], date: string): number | null {
+  if (phases.length === 0) return null;
+  const start = phases[0]!.startDate;
+  const end = phases[phases.length - 1]!.endDate;
+  const totalDays = diffDays(start, end) + 1;
+  if (totalDays <= 0) return null;
+  const elapsedDays = diffDays(start, date) + 1;
+  return Math.max(0, Math.min(100, (elapsedDays / totalDays) * 100));
+}
+
 export function buildCyclePhases(stack: Stack): CyclePhase[] {
   const phases: CyclePhase[] = [];
 

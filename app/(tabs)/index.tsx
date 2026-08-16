@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { getPeptide } from '../../src/domain/peptides';
 import type { DoseLog, Peptide, PhaseKind, Stack } from '../../src/domain/types';
-import { summariseCycle } from '../../src/engine/cycle';
+import { buildCyclePhases, cyclePlanProgressPct, groupPhasesByPeptide, summariseCycle } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import { buildLevelSeries, peptideHasLevelModel, pkShortHalfLifeClearance, type LevelSeriesResult } from '../../src/engine/pk';
 import { formatShort, relativeLabel, timeToMinutes, today } from '../../src/lib/date';
@@ -19,6 +19,7 @@ import {
   Divider,
   EmptyState,
   Heading,
+  ProgressBar,
   Row,
   Screen,
   Small,
@@ -406,6 +407,29 @@ const PHASE_TONE: Record<PhaseKind | 'ended', SeverityTone> = {
   ended: 'info',
 };
 
+/** "Washout starts in 12 days" / "Reaches full dose in 3 days" / the ended-plan sentence as-is. */
+function cycleCaption(cycle: ReturnType<typeof summariseCycle>[number]): string {
+  if (cycle.daysUntilChange === null) return cycle.nextChangeLabel;
+  const days = cycle.daysUntilChange;
+  return `${cycle.nextChangeLabel} in ${days} day${days === 1 ? '' : 's'}`;
+}
+
+/**
+ * How far through the compound's full planned timeline today sits — owner
+ * feedback (THEA-40 review) asked for this to be visible at a glance, to keep
+ * people motivated to finish a cycle rather than drift off it partway.
+ */
+function CycleProgress({ pct, caption }: { pct: number; caption: string }) {
+  return (
+    <View>
+      <ProgressBar value={pct} tone="accent" />
+      <Caption color={colors.textFaint} style={{ marginTop: spacing.xs }}>
+        {`${Math.round(pct)}% through this cycle · ${caption}`}
+      </Caption>
+    </View>
+  );
+}
+
 function StackSection({
   stack,
   last,
@@ -417,14 +441,19 @@ function StackSection({
   onBuildStack: () => void;
   onOpenPeptide: (peptideId: string) => void;
 }) {
-  // Hooks must run unconditionally, so this is computed before the early
-  // return below — an empty map when there is no stack to summarise.
+  // Hooks must run unconditionally, so these are computed before the early
+  // return below — empty maps when there is no stack to summarise.
   const cycleByPeptide = useMemo(() => {
     const map = new Map<string, ReturnType<typeof summariseCycle>[number]>();
     if (!stack) return map;
     for (const summary of summariseCycle(stack, today())) map.set(summary.peptideId, summary);
     return map;
   }, [stack]);
+
+  const phasesByPeptide = useMemo(
+    () => (stack ? groupPhasesByPeptide(buildCyclePhases(stack)) : new Map()),
+    [stack],
+  );
 
   if (!stack) {
     return (
@@ -445,6 +474,7 @@ function StackSection({
         {stack.items.map((item) => {
           const peptide = getPeptide(item.peptideId);
           const cycle = cycleByPeptide.get(item.peptideId);
+          const progressPct = cyclePlanProgressPct(phasesByPeptide.get(item.peptideId) ?? [], today());
           return (
             <ListItem
               key={item.peptideId}
@@ -453,7 +483,9 @@ function StackSection({
               detail={item.doseWithheld ? 'Dose guidance withheld' : `${formatDose(item.dose)} · ${item.daysPerWeek}x/week`}
               onPress={() => onOpenPeptide(item.peptideId)}
               meta={cycle ? <Badge label={PHASE_LABELS[cycle.phase]} tone={PHASE_TONE[cycle.phase]} /> : undefined}
-            />
+            >
+              {cycle && progressPct !== null ? <CycleProgress pct={progressPct} caption={cycleCaption(cycle)} /> : null}
+            </ListItem>
           );
         })}
       </List>
