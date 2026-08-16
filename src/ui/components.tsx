@@ -192,8 +192,16 @@ export function Small({
   return <Text style={[typography.small, { color: muted ? colors.textMuted : colors.text }, style]}>{children}</Text>;
 }
 
-export function Caption({ children, color = colors.textFaint }: { children: ReactNode; color?: string }) {
-  return <Text style={[typography.caption, { color, textTransform: 'uppercase' }]}>{children}</Text>;
+export function Caption({
+  children,
+  color = colors.textFaint,
+  style,
+}: {
+  children: ReactNode;
+  color?: string;
+  style?: StyleProp<TextStyle>;
+}) {
+  return <Text style={[typography.caption, { color, textTransform: 'uppercase' }, style]}>{children}</Text>;
 }
 
 /**

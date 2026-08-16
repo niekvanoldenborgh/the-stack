@@ -14,22 +14,31 @@ import {
   Body,
   Callout,
   Caption,
-  Card,
   Data,
   Display,
   Divider,
-  Heading,
-  Metric,
   Row,
   Screen,
-  SectionTitle,
   Small,
   Spacer,
   Stepper,
-  Title,
 } from '../../src/ui/components';
+import { SeverityIcon } from '../../src/ui/icons';
+import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
 import { RangeBar } from '../../src/ui/RangeBar';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, fonts, evidenceColor, radius, spacing } from '../../src/ui/theme';
+import { EVIDENCE_LABELS, LEGAL_LABELS, colors, evidenceColor, radius, spacing } from '../../src/ui/theme';
+
+/**
+ * Peptide detail — redesigned THEA-38.
+ *
+ * The old version was ~12 stacked SectionTitle+Card blocks, all the same
+ * weight — the purest "AI-made" tell in the app. This version puts a
+ * compact header and the dose block above the fold, keeps the sections a
+ * reader needs to act on (schedule, what it's for, side effects, red flags,
+ * other contraindications) visible, and pushes reference-grade prose
+ * (mechanism, cycling, monitoring, sources, "worth knowing") behind
+ * `Disclosure` so the page reads as one compound, not a stack of cards.
+ */
 
 /**
  * The published low/typical/high in the same units the personalised dose is
@@ -39,6 +48,12 @@ import { EVIDENCE_LABELS, LEGAL_LABELS, colors, fonts, evidenceColor, radius, sp
 function scaledDose(peptide: Peptide, profile: UserProfile, key: 'low' | 'typical' | 'high'): number {
   const scale = peptide.dosing.basis === 'per_kg' ? profile.weightKg : 1;
   return Math.round(peptide.dosing[key] * scale * 100) / 100;
+}
+
+function doseUnitLabel(unit: string): string {
+  if (unit === 'pct') return '%';
+  if (unit === 'iu') return 'IU';
+  return unit;
 }
 
 export default function PeptideDetail() {
@@ -63,7 +78,7 @@ export default function PeptideDetail() {
     return (
       <Screen>
         <Spacer size={spacing.xl} />
-        <Heading>Compound not found</Heading>
+        <Body>Compound not found</Body>
       </Screen>
     );
   }
@@ -79,6 +94,7 @@ export default function PeptideDetail() {
 
   return (
     <Screen>
+      {/* Compact header. */}
       <Spacer size={spacing.md} />
       <Display>{peptide.name}</Display>
       {peptide.aliases.length > 0 ? (
@@ -135,68 +151,54 @@ export default function PeptideDetail() {
         </View>
       ) : null}
 
+      {/* Dose block — above the fold. */}
+      <Spacer size={spacing.xl} />
       {peptide.doseGuidanceWithheld ? (
-        <View style={{ marginTop: spacing.lg }}>
-          <Callout tone="critical" title="This app shows no dose for this compound">
-            <Small muted={false} style={{ color: colors.text }}>
-              {peptide.doseGuidanceWithheld.reason}
-            </Small>
-          </Callout>
-        </View>
+        <Callout tone="critical" title="This app shows no dose for this compound">
+          <Small muted={false} style={{ color: colors.text }}>
+            {peptide.doseGuidanceWithheld.reason}
+          </Small>
+        </Callout>
       ) : (
         <>
-          <SectionTitle>Your dose</SectionTitle>
-          {computation && profile ? (
-            <Card tone="accent">
-              <Row justify="space-between" align="flex-end">
+          <Section title="Your dose" tone={2} gap={spacing.lg}>
+            {computation && profile ? (
+              <>
+                <FocalMetric
+                  eyebrow="Per administration"
+                  value={`${computation.dose.value}`}
+                  unit={doseUnitLabel(computation.dose.unit)}
+                  tone={colors.accent}
+                  meta={
+                    computation.startDose.value !== computation.dose.value
+                      ? `Starts at ${formatDose(computation.startDose)} and ramps up.`
+                      : undefined
+                  }
+                />
                 <View>
-                  <Caption color={colors.textMuted}>Per administration</Caption>
-                  <Metric color={colors.accent} style={{ marginTop: spacing.xs }}>
-                    {formatDose(computation.dose)}
-                  </Metric>
+                  <Caption color={colors.textMuted}>How this number was reached</Caption>
+                  <List style={{ marginTop: spacing.sm }}>
+                    {computation.factors.map((factor, index) => (
+                      <ListItem key={index} title={factor} />
+                    ))}
+                  </List>
                 </View>
-                {computation.startDose.value !== computation.dose.value ? (
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Caption color={colors.textMuted}>Start at</Caption>
-                    <Data style={{ fontSize: 19, marginTop: spacing.sm }}>
-                      {formatDose(computation.startDose)}
-                    </Data>
+                {computation.advisories.length > 0 ? (
+                  <View>
+                    {computation.advisories.map((advisory, index) => (
+                      <Small key={index} muted={false} style={{ color: colors.text, marginBottom: spacing.sm }}>
+                        {advisory}
+                      </Small>
+                    ))}
                   </View>
                 ) : null}
-              </Row>
-
-              <Divider />
-              <Caption color={colors.textMuted}>How this number was reached</Caption>
-              <Spacer size={spacing.sm} />
-              {computation.factors.map((factor, index) => (
-                <Row key={index} gap={spacing.sm} align="flex-start" style={{ marginBottom: spacing.sm }}>
-                  <Small muted={false} style={{ color: colors.accent }}>
-                    ·
-                  </Small>
-                  <Small style={{ flex: 1 }}>{factor}</Small>
-                </Row>
-              ))}
-
-              {computation.advisories.length > 0 ? (
-                <>
-                  <Divider />
-                  {computation.advisories.map((advisory, index) => (
-                    <Small key={index} muted={false} style={{ color: colors.text, marginBottom: spacing.sm }}>
-                      {advisory}
-                    </Small>
-                  ))}
-                </>
-              ) : null}
-            </Card>
-          ) : (
-            <Card>
+              </>
+            ) : (
               <Small>Complete your profile to see a personalised dose.</Small>
-            </Card>
-          )}
+            )}
+          </Section>
 
-          <Card>
-            <Caption color={colors.textMuted}>Where your dose sits</Caption>
-            <Spacer size={spacing.lg} />
+          <Section title="Where your dose sits">
             {computation && profile ? (
               <RangeBar
                 low={scaledDose(peptide, profile, 'low')}
@@ -219,29 +221,21 @@ export default function PeptideDetail() {
             )}
             <Divider />
             <Small>{peptide.dosing.note}</Small>
-          </Card>
+          </Section>
 
           {computation && !computation.withheld && peptide.dosing.unit !== 'pct' ? (
-            <ReconstitutionCard
-              doseValue={computation.dose.value}
-              doseUnit={computation.dose.unit as 'mcg' | 'mg'}
-            />
+            <ReconstitutionSection doseValue={computation.dose.value} doseUnit={computation.dose.unit as 'mcg' | 'mg'} />
           ) : null}
         </>
       )}
 
-      <SectionTitle>How it works</SectionTitle>
-      <Card>
-        <Body>{peptide.mechanism}</Body>
-      </Card>
-
-      <SectionTitle>Schedule</SectionTitle>
-      <Card>
+      {/* Practical detail — visible, grouped. */}
+      <Section title="Schedule">
         <Row justify="space-between">
           <Small>Route</Small>
           <Small muted={false}>{peptide.routes.map((r) => r.replace('_', ' ')).join(' or ')}</Small>
         </Row>
-        <Row justify="space-between" style={{ marginTop: spacing.sm }}>
+        <Row justify="space-between">
           <Small>Frequency</Small>
           <Small muted={false}>
             {peptide.frequency.timesPerDay}× a day,{' '}
@@ -252,224 +246,207 @@ export default function PeptideDetail() {
                 : `${peptide.frequency.daysPerWeek} days a week`}
           </Small>
         </Row>
-        <Row justify="space-between" style={{ marginTop: spacing.sm }}>
+        <Row justify="space-between">
           <Small>Timing</Small>
           <Small muted={false}>{peptide.frequency.preferredTimes.map((t) => TIME_OF_DAY_LABELS[t]).join(', ')}</Small>
         </Row>
-        <Divider />
-        <Small>{peptide.frequency.timingRationale}</Small>
-      </Card>
+      </Section>
 
-      <SectionTitle>Cycling</SectionTitle>
-      <Card>
-        <Row justify="space-between">
-          <Small>On / off</Small>
-          <Small muted={false}>
-            {peptide.cycle.offWeeks === 0
-              ? `${peptide.cycle.onWeeks} weeks continuous`
-              : `${peptide.cycle.onWeeks} weeks on, ${peptide.cycle.offWeeks} weeks off`}
-          </Small>
-        </Row>
-        {peptide.cycle.maxConsecutiveCycles !== null ? (
-          <Row justify="space-between" style={{ marginTop: spacing.sm }}>
-            <Small>Max cycles</Small>
-            <Small muted={false}>
-              {peptide.cycle.maxConsecutiveCycles} before an extended break
-            </Small>
-          </Row>
-        ) : null}
-        <Divider />
-        <Small>{peptide.cycle.rationale}</Small>
-      </Card>
-
-      <SectionTitle>What it is used for</SectionTitle>
-      <Card>
-        {Object.entries(peptide.goalFit)
-          .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
-          .map(([goalId, fit]) => {
-            const goal = GOALS_BY_ID[goalId as keyof typeof GOALS_BY_ID];
-            if (!goal || fit === undefined) return null;
-            const negative = fit < 0;
-            return (
-              <View key={goalId} style={{ marginBottom: spacing.md }}>
-                <Row justify="space-between">
-                  <Small muted={false}>
-                    {goal.icon} {goal.label}
-                  </Small>
-                  <Small muted={false} style={{ color: negative ? colors.critical : colors.accent }}>
-                    {negative ? `works against · ${fit}` : `${fit}/5`}
-                  </Small>
-                </Row>
-                <View style={{ height: 5, backgroundColor: colors.surfaceHigh, borderRadius: 3, marginTop: 5 }}>
-                  <View
-                    style={{
-                      width: `${(Math.abs(fit) / 5) * 100}%`,
-                      height: 5,
-                      borderRadius: 3,
-                      backgroundColor: negative ? colors.critical : colors.accent,
-                    }}
+      {Object.keys(peptide.goalFit).length > 0 ? (
+        <Section title="What it is used for">
+          <List>
+            {Object.entries(peptide.goalFit)
+              .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+              .map(([goalId, fit]) => {
+                const goal = GOALS_BY_ID[goalId as keyof typeof GOALS_BY_ID];
+                if (!goal || fit === undefined) return null;
+                const negative = fit < 0;
+                return (
+                  <ListItem
+                    key={goalId}
+                    title={goal.label}
+                    tone={negative ? 'critical' : 'accent'}
+                    meta={
+                      <Small muted={false} style={{ color: negative ? colors.critical : colors.accent }}>
+                        {negative ? `works against · ${fit}` : `${fit}/5`}
+                      </Small>
+                    }
                   />
-                </View>
-              </View>
-            );
-          })}
-        <Small>
-          Negative values mean the compound pushes against that goal — the engine treats them as penalties, not
-          neutral.
-        </Small>
-      </Card>
+                );
+              })}
+          </List>
+          <Small>
+            Negative values mean the compound pushes against that goal — the engine treats them as penalties, not
+            neutral.
+          </Small>
+        </Section>
+      ) : null}
 
-      <SectionTitle>Side effects</SectionTitle>
-      {(['severe', 'moderate', 'mild'] as Severity[]).map((severity) =>
-        grouped[severity].length > 0 ? (
-          <Card key={severity} tone={severity === 'severe' ? 'critical' : severity === 'moderate' ? 'moderate' : undefined}>
-            <Caption
-              color={severity === 'severe' ? colors.critical : severity === 'moderate' ? colors.moderate : colors.textMuted}
-            >
-              {severity}
-            </Caption>
-            <Spacer size={spacing.sm} />
-            {grouped[severity].map((effect) => (
-              <View key={effect.label} style={{ marginBottom: spacing.md }}>
-                <Row justify="space-between" align="flex-start" gap={spacing.md}>
-                  <Body style={{ flex: 1 }}>{effect.label}</Body>
-                  <Small>{effect.likelihood}</Small>
+      {(['severe', 'moderate', 'mild'] as Severity[]).some((s) => grouped[s].length > 0) ? (
+        <Section title="Side effects">
+          {(['severe', 'moderate', 'mild'] as Severity[]).map((severity) =>
+            grouped[severity].length > 0 ? (
+              <View key={severity}>
+                <Row gap={spacing.xs} align="center">
+                  <SeverityIcon severity={severity === 'severe' ? 'critical' : severity === 'moderate' ? 'moderate' : 'info'} size={13} />
+                  <Caption
+                    color={severity === 'severe' ? colors.critical : severity === 'moderate' ? colors.moderate : colors.textMuted}
+                  >
+                    {severity}
+                  </Caption>
                 </Row>
-                {effect.detail ? <Small style={{ marginTop: 2 }}>{effect.detail}</Small> : null}
+                <List style={{ marginTop: spacing.sm }}>
+                  {grouped[severity].map((effect) => (
+                    <ListItem key={effect.label} title={effect.label} detail={effect.detail} meta={<Small>{effect.likelihood}</Small>} />
+                  ))}
+                </List>
               </View>
-            ))}
-          </Card>
-        ) : null,
-      )}
+            ) : null,
+          )}
+        </Section>
+      ) : null}
 
       {peptide.redFlags.length > 0 ? (
-        <>
-          <SectionTitle>Stop and seek care if</SectionTitle>
-          <Card tone="critical">
-            {peptide.redFlags.map((flag, index) => (
-              <View key={flag.symptom} style={{ marginBottom: index === peptide.redFlags.length - 1 ? 0 : spacing.lg }}>
-                <Body style={{ fontFamily: fonts.sansMedium }}>{flag.symptom}</Body>
-                <Small style={{ marginTop: 2 }}>{flag.action}</Small>
-              </View>
+        <Section title="Stop and seek care if" tone={2}>
+          <List>
+            {peptide.redFlags.map((flag) => (
+              <ListItem key={flag.symptom} tone="critical" title={flag.symptom} detail={flag.action} />
             ))}
-          </Card>
-        </>
+          </List>
+        </Section>
       ) : null}
 
       {otherContraindications.length > 0 ? (
-        <>
-          <SectionTitle>Do not use if</SectionTitle>
-          <Card>
-            {otherContraindications.map((c, index) => (
-              <View key={c.flag}>
-                {index > 0 ? <Divider /> : null}
-                <Row gap={spacing.sm} align="flex-start">
-                  <Badge label={c.kind === 'absolute' ? 'Absolute' : 'Caution'} tone={c.kind === 'absolute' ? 'critical' : 'moderate'} />
-                </Row>
-                <Body style={{ marginTop: spacing.sm }}>{HEALTH_FLAGS_BY_ID[c.flag]?.label ?? c.flag}</Body>
-                <Small style={{ marginTop: 2 }}>{c.reason}</Small>
-              </View>
+        <Section title="Do not use if">
+          <List>
+            {otherContraindications.map((c) => (
+              <ListItem
+                key={c.flag}
+                tone={c.kind === 'absolute' ? 'critical' : 'moderate'}
+                title={HEALTH_FLAGS_BY_ID[c.flag]?.label ?? c.flag}
+                detail={c.reason}
+                meta={<Badge label={c.kind === 'absolute' ? 'Absolute' : 'Caution'} tone={c.kind === 'absolute' ? 'critical' : 'moderate'} />}
+              />
             ))}
-          </Card>
-        </>
+          </List>
+        </Section>
       ) : null}
 
-      {peptide.monitoring.length > 0 ? (
-        <>
-          <SectionTitle>Monitoring</SectionTitle>
-          <Card>
-            {peptide.monitoring.map((item, index) => (
-              <Row key={index} gap={spacing.sm} align="flex-start" style={{ marginBottom: spacing.sm }}>
-                <Small muted={false} style={{ color: colors.accent }}>
-                  ·
-                </Small>
-                <Small style={{ flex: 1 }}>{item}</Small>
-              </Row>
-            ))}
-          </Card>
-        </>
-      ) : null}
+      {/* Reference detail — behind disclosure. */}
+      <Section title="More about this compound" last gap={spacing.lg}>
+        <Disclosure label="How it works">
+          <Body>{peptide.mechanism}</Body>
+        </Disclosure>
 
-      {peptide.notes && peptide.notes.length > 0 ? (
-        <>
-          <SectionTitle>Worth knowing</SectionTitle>
-          {peptide.notes.map((note, index) => (
-            <Callout key={index} tone="info" title="">
-              <Small muted={false} style={{ color: colors.text }}>
-                {note}
+        <Disclosure label="Cycling" summary={peptide.cycle.rationale}>
+          <Row justify="space-between">
+            <Small>On / off</Small>
+            <Small muted={false}>
+              {peptide.cycle.offWeeks === 0
+                ? `${peptide.cycle.onWeeks} weeks continuous`
+                : `${peptide.cycle.onWeeks} weeks on, ${peptide.cycle.offWeeks} weeks off`}
+            </Small>
+          </Row>
+          {peptide.cycle.maxConsecutiveCycles !== null ? (
+            <Row justify="space-between" style={{ marginTop: spacing.sm }}>
+              <Small>Max cycles</Small>
+              <Small muted={false}>{peptide.cycle.maxConsecutiveCycles} before an extended break</Small>
+            </Row>
+          ) : null}
+          <Small style={{ marginTop: spacing.sm }}>{peptide.cycle.rationale}</Small>
+        </Disclosure>
+
+        {peptide.monitoring.length > 0 ? (
+          <Disclosure label="Monitoring" summary={`${peptide.monitoring.length} item${peptide.monitoring.length === 1 ? '' : 's'} to arrange with a clinician`}>
+            <List>
+              {peptide.monitoring.map((item, index) => (
+                <ListItem key={index} title={item} />
+              ))}
+            </List>
+          </Disclosure>
+        ) : null}
+
+        {peptide.notes && peptide.notes.length > 0 ? (
+          <Disclosure label="Worth knowing">
+            <List>
+              {peptide.notes.map((note, index) => (
+                <ListItem key={index} title={note} />
+              ))}
+            </List>
+          </Disclosure>
+        ) : null}
+
+        <Disclosure label="Sources" summary={`${peptide.sources.length} cited`}>
+          <List>
+            {peptide.sources.map((source, index) => (
+              <Small key={index} style={{ marginBottom: spacing.sm }}>
+                {index + 1}. {source}
               </Small>
-            </Callout>
-          ))}
-        </>
-      ) : null}
-
-      <SectionTitle>Sources</SectionTitle>
-      <Card>
-        {peptide.sources.map((source, index) => (
-          <Small key={index} style={{ marginBottom: spacing.sm }}>
-            {index + 1}. {source}
-          </Small>
-        ))}
-      </Card>
+            ))}
+          </List>
+        </Disclosure>
+      </Section>
 
       <Spacer size={spacing.xxl} />
     </Screen>
   );
 }
 
-function ReconstitutionCard({ doseValue, doseUnit }: { doseValue: number; doseUnit: 'mcg' | 'mg' }) {
+function ReconstitutionSection({ doseValue, doseUnit }: { doseValue: number; doseUnit: 'mcg' | 'mg' }) {
   const [vialMg, setVialMg] = useState(5);
   const [waterMl, setWaterMl] = useState(2);
 
   const result = reconstitute(vialMg, waterMl, { value: doseValue, unit: doseUnit });
 
   return (
-    <Card>
-      <Caption color={colors.textMuted}>Reconstitution calculator</Caption>
-      <Small style={{ marginTop: spacing.xs, marginBottom: spacing.lg }}>
+    <Section title="Reconstitution calculator" gap={spacing.lg}>
+      <Small>
         Mixing up milligrams and syringe units is one of the most common ways people accidentally take ten times the
         dose they meant to. Work it out here before you draw.
       </Small>
 
-      <Small>Peptide in the vial</Small>
-      <Spacer size={spacing.sm} />
-      <Stepper value={vialMg} onChange={setVialMg} min={1} max={30} step={1} suffix="mg" />
+      <View>
+        <Small>Peptide in the vial</Small>
+        <Spacer size={spacing.sm} />
+        <Stepper value={vialMg} onChange={setVialMg} min={1} max={30} step={1} suffix="mg" />
+      </View>
 
-      <Spacer size={spacing.lg} />
-      <Small>Bacteriostatic water added</Small>
-      <Spacer size={spacing.sm} />
-      <Stepper value={waterMl} onChange={setWaterMl} min={0.5} max={5} step={0.5} suffix="ml" />
+      <View>
+        <Small>Bacteriostatic water added</Small>
+        <Spacer size={spacing.sm} />
+        <Stepper value={waterMl} onChange={setWaterMl} min={0.5} max={5} step={0.5} suffix="ml" />
+      </View>
 
-      <Divider />
       {result ? (
-        <>
+        <View>
+          <Divider />
           <Row justify="space-between">
             <Small>Concentration</Small>
             <Data>{result.mcgPerUnit} mcg / unit</Data>
           </Row>
           <Row justify="space-between" align="center" style={{ marginTop: spacing.sm }}>
             <Small>Draw for your dose</Small>
-            <Metric color={colors.accent} style={{ fontSize: 30, lineHeight: 34 }}>
-              {result.unitsForDose}
-              <Data color={colors.textMuted}> units</Data>
-            </Metric>
+            <Row gap={spacing.xs} align="flex-end">
+              <Data color={colors.accent} style={{ fontSize: 24 }}>
+                {result.unitsForDose}
+              </Data>
+              <Data color={colors.textMuted}>units</Data>
+            </Row>
           </Row>
           <Small style={{ marginTop: spacing.sm }}>
             Units on a standard 1 ml U-100 insulin syringe, where 100 units = 1 ml.
           </Small>
           {result.warning ? (
-            <View style={{ marginTop: spacing.md }}>
-              <Callout tone="moderate" title="Adjust your mix">
-                <Small muted={false} style={{ color: colors.text }}>
-                  {result.warning}
-                </Small>
-              </Callout>
-            </View>
+            <Callout tone="moderate" title="Adjust your mix">
+              <Small muted={false} style={{ color: colors.text }}>
+                {result.warning}
+              </Small>
+            </Callout>
           ) : null}
-        </>
+        </View>
       ) : (
         <Small>Not applicable for this compound.</Small>
       )}
-    </Card>
+    </Section>
   );
 }

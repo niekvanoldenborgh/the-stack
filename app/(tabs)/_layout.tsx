@@ -1,5 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { Calendar, House, SquarePlus, Settings, TrendingUp } from 'lucide-react-native';
 import { StyleSheet } from 'react-native';
 
 import { colors, fonts, typography } from '../../src/ui/theme';
@@ -28,7 +28,7 @@ export default function TabsLayout() {
         options={{
           title: 'Summary',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <House color={color} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -36,7 +36,7 @@ export default function TabsLayout() {
         options={{
           title: 'Logger',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <SquarePlus color={color} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -44,7 +44,7 @@ export default function TabsLayout() {
         options={{
           title: 'Results',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="trending-up-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -52,7 +52,7 @@ export default function TabsLayout() {
         options={{
           title: 'Calendar',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -60,7 +60,7 @@ export default function TabsLayout() {
         options={{
           title: 'Settings',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} strokeWidth={1.75} />,
         }}
       />
     </Tabs>

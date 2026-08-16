@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -15,7 +14,6 @@ import {
   Badge,
   Body,
   Button,
-  Callout,
   Caption,
   Card,
   Data,
@@ -27,14 +25,15 @@ import {
   Metric,
   Row,
   Screen,
-  SectionTitle,
   Small,
   Spacer,
   StatTile,
   Title,
 } from '../src/ui/components';
 import { Reveal } from '../src/ui/motion';
+import { Disclosure, Section } from '../src/ui/primitives';
 import { RiskPicker } from '../src/ui/RiskPicker';
+import { SafetyReportView } from '../src/ui/SafetyReport';
 import { EVIDENCE_LABELS, LEGAL_LABELS, colors, evidenceColor, radius, spacing } from '../src/ui/theme';
 
 export default function RecommendationScreen() {
@@ -45,7 +44,6 @@ export default function RecommendationScreen() {
   const createProgram = useAppStore((s) => s.createProgram);
 
   const [risk, setRisk] = useState<RiskTolerance>(profile?.riskTolerance ?? 3);
-  const [showWorkings, setShowWorkings] = useState(false);
 
   // Re-derived on every risk change, so the dial is live rather than a
   // preference you set and hope about.
@@ -80,16 +78,21 @@ export default function RecommendationScreen() {
     router.replace('/(tabs)');
   };
 
+  // Age notices and "against what you're already on" surface before the
+  // picked items — they explain why the list below looks the way it does.
+  // Everything else about this stack's safety findings surfaces after, in
+  // the same SafetyReportView, so there is exactly one implementation of
+  // "render a SafetyReport" even though this screen uses it twice.
+  const ageNotices = stack.safety.notices.filter((n) => n.id.startsWith('age-'));
+  const otherNotices = stack.safety.notices.filter((n) => !n.id.startsWith('age-'));
+
   return (
     <Screen>
       <Spacer size={spacing.xl} />
       <Reveal index={0}>
         <Logo size={40} />
         <Spacer size={spacing.lg} />
-        <Row gap={spacing.sm}>
-          <Ionicons name="sparkles" size={16} color={colors.accent} />
-          <Caption color={colors.accent}>Built from your profile</Caption>
-        </Row>
+        <Caption color={colors.accent}>Built from your profile</Caption>
       </Reveal>
 
       <Reveal index={1}>
@@ -116,125 +119,67 @@ export default function RecommendationScreen() {
       </Reveal>
 
       <Reveal index={3}>
-        <SectionTitle>Your risk setting</SectionTitle>
-        <RiskPicker value={risk} onChange={setRisk} />
-        <Small style={{ marginTop: -spacing.sm, marginBottom: spacing.md }}>
-          Moving the dial re-derives every dose below straight away. It changes the amounts only — never which
-          compounds you are offered. Nothing is saved until you accept.
-        </Small>
+        <Section title="Your risk setting">
+          <RiskPicker value={risk} onChange={setRisk} />
+          <Small>
+            Moving the dial re-derives every dose below straight away. It changes the amounts only — never which
+            compounds you are offered. Nothing is saved until you accept.
+          </Small>
+        </Section>
       </Reveal>
 
-      {stack.safety.blocking ? (
-        <Callout tone="critical" title="This recommendation has a blocking finding">
-          Something here is contraindicated for your health history or interacts critically with what you are
-          already taking. Read the warnings below before accepting.
-        </Callout>
-      ) : null}
+      <SafetyReportView
+        report={{
+          ...stack.safety,
+          interactions: [],
+          contraindications: [],
+          goalConflicts: [],
+          notices: ageNotices,
+          redFlags: [],
+          sideEffects: [],
+          monitoring: [],
+        }}
+        blockingCopy={{
+          title: 'This recommendation has a blocking finding',
+          body: 'Something here is contraindicated for your health history or interacts critically with what you are already taking. Read the warnings below before accepting.',
+        }}
+      />
 
-      {stack.safety.notices
-        .filter((n) => n.id.startsWith('age-'))
-        .map((notice) => (
-          <Callout
-            key={notice.id}
-            tone={notice.severity === 'critical' ? 'critical' : notice.severity === 'high' ? 'high' : 'moderate'}
-            title={notice.title}
-          >
-            {notice.detail}
-          </Callout>
-        ))}
-
-      {stack.safety.interactionsWithCurrent.length > 0 ? (
-        <>
-          <SectionTitle>Against what you are already on</SectionTitle>
-          {stack.safety.interactionsWithCurrent.map((finding) => (
-            <Callout
-              key={`${finding.ruleId}-${finding.peptideIds.join('-')}`}
-              tone={
-                finding.severity === 'critical'
-                  ? 'critical'
-                  : finding.severity === 'high'
-                    ? 'high'
-                    : finding.severity === 'moderate'
-                      ? 'moderate'
-                      : 'info'
-              }
-              title={finding.title}
-            >
-              {`${finding.peptideIds.map((id) => getPeptide(id)?.name ?? id).join(' + ')}\n\n${finding.detail}\n\n${finding.guidance}`}
-            </Callout>
-          ))}
-        </>
-      ) : null}
-
-      <SectionTitle>What we picked</SectionTitle>
+      <Caption color={colors.textMuted} style={{ marginBottom: spacing.md }}>
+        What we picked
+      </Caption>
       {stack.items.length === 0 ? (
         <EmptyState
           title="Nothing cleared the bar"
           body="At this risk setting, every compound that serves your goals is either contraindicated for you, conflicts with what you are already taking, or falls below the evidence threshold. Try raising the dial."
         />
       ) : (
-        stack.items.map((item, index) => (
-          <Reveal key={item.peptideId} index={4 + index}>
-            <RecommendedCard item={item} onPress={() => router.push(`/peptide/${item.peptideId}`)} />
-          </Reveal>
-        ))
+        <View style={{ marginBottom: spacing.xxl }}>
+          {stack.items.map((item, index) => (
+            <Reveal key={item.peptideId} index={4 + index}>
+              <RecommendedCard item={item} onPress={() => router.push(`/peptide/${item.peptideId}`)} />
+            </Reveal>
+          ))}
+        </View>
       )}
 
-      {stack.safety.interactions.length > 0 ? (
-        <>
-          <SectionTitle>Inside this stack</SectionTitle>
-          {stack.safety.interactions.map((finding) => (
-            <Callout
-              key={`${finding.ruleId}-${finding.peptideIds.join('-')}`}
-              tone={finding.severity === 'info' ? 'info' : finding.severity === 'moderate' ? 'moderate' : 'high'}
-              title={finding.title}
-            >
-              {`${finding.detail}\n\n${finding.guidance}`}
-            </Callout>
-          ))}
-        </>
-      ) : null}
+      <SafetyReportView
+        report={{
+          ...stack.safety,
+          interactionsWithCurrent: [],
+          blocking: false,
+          contraindications: [],
+          notices: otherNotices,
+        }}
+      />
 
-      {stack.safety.notices.filter((n) => !n.id.startsWith('age-')).length > 0 ? (
-        <>
-          <SectionTitle>Before you start</SectionTitle>
-          {stack.safety.notices
-            .filter((n) => !n.id.startsWith('age-'))
-            .map((notice) => (
-              <Card
-                key={notice.id}
-                tone={notice.severity === 'high' ? 'high' : notice.severity === 'moderate' ? 'moderate' : 'info'}
-              >
-                <Heading>{notice.title}</Heading>
-                <Divider />
-                <Small>{notice.detail}</Small>
-              </Card>
-            ))}
-        </>
-      ) : null}
-
-      <Pressable onPress={() => setShowWorkings((v) => !v)} accessibilityRole="button">
-        <Card>
-          <Row justify="space-between">
-            <Heading>Why not the others?</Heading>
-            <Ionicons
-              name={showWorkings ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={colors.textMuted}
-            />
-          </Row>
-          {!showWorkings ? (
-            <Small style={{ marginTop: spacing.xs }}>
-              {exclusions.length} compound{exclusions.length === 1 ? '' : 's'} were considered and left out.
-            </Small>
-          ) : null}
-        </Card>
-      </Pressable>
-
-      {showWorkings ? (
-        <Card>
+      <Disclosure
+        label="Why not the others?"
+        summary={`${exclusions.length} compound${exclusions.length === 1 ? '' : 's'} were considered and left out.`}
+      >
+        <View>
           {exclusions.slice(0, 14).map((exclusion, index) => (
-            <View key={exclusion.peptideId}>
+            <View key={exclusion.peptideId} style={{ marginBottom: index === exclusions.length - 1 ? 0 : spacing.md }}>
               {index > 0 ? <Divider /> : null}
               <Pressable onPress={() => router.push(`/peptide/${exclusion.peptideId}`)} accessibilityRole="button">
                 <Body>{exclusion.name}</Body>
@@ -242,8 +187,8 @@ export default function RecommendationScreen() {
               </Pressable>
             </View>
           ))}
-        </Card>
-      ) : null}
+        </View>
+      </Disclosure>
 
       <Spacer size={spacing.lg} />
       <Button
@@ -331,9 +276,7 @@ function RecommendedCard({ item, onPress }: { item: StackItem; onPress: () => vo
         )}
 
         {item.startDose.value !== item.dose.value && !item.doseWithheld ? (
-          <Small style={{ marginTop: spacing.sm }}>
-            Starts at {formatDose(item.startDose)} and ramps up.
-          </Small>
+          <Small style={{ marginTop: spacing.sm }}>Starts at {formatDose(item.startDose)} and ramps up.</Small>
         ) : null}
 
         <Divider />

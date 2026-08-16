@@ -105,6 +105,22 @@ export const radius = {
   pill: 999,
 } as const;
 
+/**
+ * Near-black elevation ladder — depth comes from stepping through these
+ * tones, not from shadows or borders. 0 is the screen itself; 3 is the
+ * highest a piece of content sits above it. Most grouped content lives at 1;
+ * reach for 2/3 only to lift something (a focal block, a nested callout)
+ * above its own container.
+ */
+export type Elevation = 0 | 1 | 2 | 3;
+
+export const elevation: Record<Elevation, string> = {
+  0: colors.bg,
+  1: colors.surface,
+  2: colors.surfaceAlt,
+  3: colors.surfaceHigh,
+};
+
 export type SeverityTone = 'critical' | 'high' | 'moderate' | 'info' | 'accent';
 
 export function toneColors(tone: SeverityTone): { fg: string; bg: string } {
