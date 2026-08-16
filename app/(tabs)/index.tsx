@@ -2,11 +2,13 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 
+import { METRIC_BY_ID } from '../../src/domain/metrics';
 import { getPeptide } from '../../src/domain/peptides';
-import type { DoseLog, Peptide, PhaseKind, Stack } from '../../src/domain/types';
+import type { DoseLog, GoalTarget, Measurement, Peptide, PhaseKind, Stack } from '../../src/domain/types';
 import { buildCyclePhases, cyclePlanProgressPct, groupPhasesByPeptide, summariseCycle } from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import { buildLevelSeries, peptideHasLevelModel, pkShortHalfLifeClearance, type LevelSeriesResult } from '../../src/engine/pk';
+import { formatMetricValue, goalTargetProgressPct, summariseMeasurements } from '../../src/engine/progress';
 import { formatShort, relativeLabel, timeToMinutes, today } from '../../src/lib/date';
 import { useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
 import { LevelCurve } from '../../src/ui/charts';
@@ -41,7 +43,11 @@ import { colors, spacing, type SeverityTone } from '../../src/ui/theme';
  * This screen answers "what's next"; "how am I doing" (adherence, active
  * compounds, injections logged, the per-goal measurements) now lives on
  * Results instead — it used to be duplicated as an Overview block here too
- * (THEA-40 consolidation).
+ * (THEA-40 consolidation). The one deliberate exception is `GoalProgressSection`
+ * below: owner feedback (THEA-40 round 2) asked for a glanceable progress
+ * infographic here too, alongside the cycle progress bar. It surfaces only
+ * the single target the user set on Results, not a dashboard — the target
+ * number is entirely theirs, same as everywhere else in this app.
  *
  * The levels section is the only part of this screen with hard rules — see
  * the PK spec's no-dosage boundary (§3). It reads exactly what §1–§2 hand it
@@ -56,6 +62,7 @@ export default function SummaryScreen() {
   const stack = useActiveStack();
   const doseLogs = useAppStore((s) => s.doseLogs);
   const injectionLogs = useAppStore((s) => s.injectionLogs);
+  const measurements = useAppStore((s) => s.measurements);
   const settings = useAppStore((s) => s.settings);
   const setSetting = useAppStore((s) => s.setSetting);
   const upcomingDoses = useUpcomingDoses(14);
@@ -88,6 +95,8 @@ export default function SummaryScreen() {
         remindersEnabled={settings.remindersEnabled}
         onOpenAlarmSettings={() => router.push('/settings/alarm')}
       />
+
+      <GoalProgressSection target={profile.goalTarget} measurements={measurements} />
 
       <LevelsSection
         stack={stack}
@@ -188,6 +197,33 @@ function NextInjectionSection({
           <Button label="Open alarm settings" variant="secondary" onPress={onOpenAlarmSettings} style={{ marginTop: spacing.md }} />
         </View>
       )}
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Goal progress — the target the user set on Results, if any (THEA-40 round 2)
+// ---------------------------------------------------------------------------
+
+function GoalProgressSection({ target, measurements }: { target?: GoalTarget; measurements: Measurement[] }) {
+  const pct = useMemo(() => {
+    if (!target) return null;
+    const summary = summariseMeasurements(measurements).find((s) => s.key === target.metricId);
+    return goalTargetProgressPct(target, summary?.latest ?? null);
+  }, [target, measurements]);
+
+  if (!target || pct === null) return null;
+
+  const metric = METRIC_BY_ID[target.metricId];
+  const targetLabel = formatMetricValue(target.value, metric?.unit ?? '', metric?.precision ?? 1);
+  const label = (metric?.label ?? 'tracked measure').toLowerCase();
+
+  return (
+    <Section title="Goal progress">
+      <ProgressBar value={pct} tone="accent" />
+      <Caption color={colors.textFaint} style={{ marginTop: spacing.xs }}>
+        {`${Math.round(pct)}% of the way to your ${label} target · ${targetLabel}`}
+      </Caption>
     </Section>
   );
 }

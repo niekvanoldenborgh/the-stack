@@ -10,9 +10,9 @@ import {
   metricsForGoals,
   type MetricInputKind,
 } from '../../src/domain/metrics';
-import type { DoseLog, Measurement, Stack } from '../../src/domain/types';
+import type { DoseLog, GoalTarget, Measurement, Stack } from '../../src/domain/types';
 import { generateSchedule } from '../../src/engine/cycle';
-import { seriesKey, summariseMeasurements, type MetricSummary } from '../../src/engine/progress';
+import { goalTargetProgressPct, seriesKey, summariseMeasurements, type MetricSummary } from '../../src/engine/progress';
 import { addDays, formatShort, relativeLabel, today } from '../../src/lib/date';
 import { selectAdherence, useActiveStack, useAppStore } from '../../src/store/useAppStore';
 import { Sparkbars } from '../../src/ui/charts';
@@ -23,6 +23,7 @@ import {
   Data,
   Display,
   EmptyState,
+  ProgressBar,
   Row,
   Screen,
   Small,
@@ -49,8 +50,11 @@ import { colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
  * of how many goals were picked, which read as a wall of near-duplicate
  * blocks rather than one screen with a point of view.
  *
- * It never sets a target or judges a value: the app is not a clinician, so it
- * reports the numbers and leaves the meaning to the user.
+ * It never sets a target or judges a value itself: the app is not a
+ * clinician. The one exception — owner feedback, THEA-40 round 2 — is that
+ * the focal metric can carry a target the user typed in themselves; the app
+ * only measures distance already-logged readings have covered toward that
+ * number, the same way it reports change since the first reading.
  */
 
 interface Descriptor {
@@ -103,6 +107,7 @@ export default function ResultsScreen() {
   const measurements = useAppStore((s) => s.measurements);
   const addMeasurement = useAppStore((s) => s.addMeasurement);
   const removeMeasurement = useAppStore((s) => s.removeMeasurement);
+  const updateProfile = useAppStore((s) => s.updateProfile);
   const stack = useActiveStack();
   const doseLogs = useAppStore((s) => s.doseLogs);
   const injectionLogs = useAppStore((s) => s.injectionLogs);
@@ -192,8 +197,13 @@ export default function ResultsScreen() {
           descriptor={primary}
           summary={summaryByKey.get(primary.key)}
           entries={entriesByKey.get(primary.key) ?? []}
+          target={profile.goalTarget?.metricId === primary.metricId ? profile.goalTarget : undefined}
           onAdd={addMeasurement}
           onRemove={removeMeasurement}
+          onSetTarget={(value, baseline) =>
+            updateProfile({ goalTarget: { metricId: primary.metricId, value, baseline, setAt: today() } })
+          }
+          onClearTarget={() => updateProfile({ goalTarget: undefined })}
         />
       ) : (
         <Section tone={2}>
@@ -245,28 +255,131 @@ function PrimaryMetricSection({
   descriptor,
   summary,
   entries,
+  target,
   onAdd,
   onRemove,
+  onSetTarget,
+  onClearTarget,
 }: {
   descriptor: Descriptor;
   summary?: MetricSummary;
   entries: Measurement[];
+  target?: GoalTarget;
   onAdd: (entry: Omit<Measurement, 'id'>) => void;
   onRemove: (id: string) => void;
+  onSetTarget: (value: number, baseline: number) => void;
+  onClearTarget: () => void;
 }) {
   const latest = summary?.latest ?? null;
   const figure = latest != null ? focalValue(latest, descriptor) : { value: '—' };
   const changeText = summary && summary.change !== null && summary.first !== null ? changeLineText(descriptor, summary) : undefined;
   const historySummary = entries.length > 0 ? `${entries.length} reading${entries.length === 1 ? '' : 's'} logged` : 'No readings yet';
+  const progressPct = target ? goalTargetProgressPct(target, latest) : null;
 
   return (
     <Section tone={2} gap={spacing.lg}>
       <FocalMetric eyebrow={descriptor.label} value={figure.value} unit={figure.unit} meta={changeText ?? descriptor.hint} />
+      {target && progressPct !== null ? (
+        <View>
+          <ProgressBar value={progressPct} tone="accent" />
+          <Caption color={colors.textFaint} style={{ marginTop: spacing.xs }}>
+            {`${Math.round(progressPct)}% of the way to your target of ${valueLabel(target.value, descriptor)}`}
+          </Caption>
+        </View>
+      ) : null}
+      <GoalTargetEditor descriptor={descriptor} target={target} latest={latest} onSet={onSetTarget} onClear={onClearTarget} />
       <Disclosure label="History & log a reading" summary={historySummary}>
         <MetricDetail descriptor={descriptor} summary={summary} entries={entries} onAdd={onAdd} onRemove={onRemove} />
       </Disclosure>
     </Section>
   );
+}
+
+/**
+ * Lets the user set, edit or clear a target for the focal metric — the only
+ * metric a target can be attached to, matching this screen's "one focal
+ * measure" treatment. Only offered for `number`-kind metrics: a 1–5
+ * self-rating has no natural "target" the way a weight or a lift does. The
+ * value is entirely the user's; nothing here suggests or validates it as
+ * healthy (see `domain/metrics.ts`).
+ */
+function GoalTargetEditor({
+  descriptor,
+  target,
+  latest,
+  onSet,
+  onClear,
+}: {
+  descriptor: Descriptor;
+  target?: GoalTarget;
+  latest: number | null;
+  onSet: (value: number, baseline: number) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+
+  if (descriptor.kind !== 'number') return null;
+
+  const numericValue = Number(text);
+  const valid = text.trim() !== '' && Number.isFinite(numericValue) && numericValue > 0;
+
+  const startEditing = () => {
+    setText(target ? `${target.value}` : '');
+    setOpen(true);
+  };
+
+  const save = () => {
+    if (!valid || latest === null) return;
+    onSet(numericValue, latest);
+    setOpen(false);
+  };
+
+  if (open) {
+    return (
+      <View>
+        <View style={styles.inputWrap}>
+          <TextInput
+            style={styles.input}
+            value={text}
+            onChangeText={setText}
+            keyboardType="decimal-pad"
+            placeholder={`Target value${descriptor.unit ? ` (${descriptor.unit})` : ''}`}
+            placeholderTextColor={colors.textFaint}
+            returnKeyType="done"
+            onSubmitEditing={save}
+          />
+          {descriptor.unit ? <Small style={{ marginLeft: spacing.sm }}>{descriptor.unit}</Small> : null}
+        </View>
+        <Spacer size={spacing.sm} />
+        <Row gap={spacing.sm}>
+          <Button label="Save target" onPress={save} disabled={!valid} style={{ flex: 1 }} />
+          <Button label="Cancel" variant="ghost" onPress={() => setOpen(false)} style={{ flex: 1 }} />
+        </Row>
+      </View>
+    );
+  }
+
+  if (target) {
+    return (
+      <Row justify="space-between">
+        <Small>{`Target: ${valueLabel(target.value, descriptor)}`}</Small>
+        <Row gap={spacing.lg}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Edit target" hitSlop={8} onPress={startEditing}>
+            <Small style={{ color: colors.accent }}>Edit</Small>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Clear target" hitSlop={8} onPress={onClear}>
+            <Small style={{ color: colors.textFaint }}>Clear</Small>
+          </Pressable>
+        </Row>
+      </Row>
+    );
+  }
+
+  // Nothing logged yet — there is no baseline to measure a target against.
+  if (latest === null) return null;
+
+  return <Button label="Set a target" variant="ghost" onPress={startEditing} />;
 }
 
 // ---------------------------------------------------------------------------

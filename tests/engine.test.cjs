@@ -47,7 +47,7 @@ const {
   trainingSummary,
   weeklyVolume,
 } = require('../.test-build/engine/analytics');
-const { summariseMeasurements, seriesKey } = require('../.test-build/engine/progress');
+const { summariseMeasurements, seriesKey, goalTargetProgressPct, formatMetricValue } = require('../.test-build/engine/progress');
 const { METRICS, METRIC_BY_ID, metricsForGoals, CUSTOM_METRIC_ID } = require('../.test-build/domain/metrics');
 
 function makeProfile(overrides = {}) {
@@ -1239,6 +1239,44 @@ describe('progress summaries', () => {
     assert.equal(summaries.length, 2);
     const mood = summaries.find((s) => s.label === 'Mood');
     assert.equal(mood.count, 2);
+  });
+});
+
+describe('goal target progress (THEA-40 round 2)', () => {
+  const target = (overrides = {}) => ({ metricId: 'bodyweight', value: 75, baseline: 82, setAt: '2026-01-01', ...overrides });
+
+  it('is 0% at the baseline and 100% at the target', () => {
+    assert.equal(goalTargetProgressPct(target(), 82), 0);
+    assert.equal(goalTargetProgressPct(target(), 75), 100);
+  });
+
+  it('reports a fraction of the way between baseline and target', () => {
+    // Halfway from 82 down to 75 is 78.5.
+    assert.equal(goalTargetProgressPct(target(), 78.5), 50);
+  });
+
+  it('works the same way for a target above the baseline (e.g. gaining weight)', () => {
+    const gain = target({ value: 90, baseline: 80 });
+    assert.equal(goalTargetProgressPct(gain, 85), 50);
+  });
+
+  it('clamps to [0, 100] rather than reporting over/undershoot', () => {
+    assert.equal(goalTargetProgressPct(target(), 90), 0); // moved the wrong way
+    assert.equal(goalTargetProgressPct(target(), 60), 100); // overshot the target
+  });
+
+  it('returns null without a latest reading, and does not divide by zero when target equals baseline', () => {
+    assert.equal(goalTargetProgressPct(target(), null), null);
+    assert.equal(goalTargetProgressPct(target({ value: 80, baseline: 80 }), 80), 100);
+    assert.equal(goalTargetProgressPct(target({ value: 80, baseline: 80 }), 79), 0);
+  });
+});
+
+describe('formatMetricValue', () => {
+  it('formats unit, percent and unitless values consistently with the Results screen', () => {
+    assert.equal(formatMetricValue(75.5, 'kg', 1), '75.5 kg');
+    assert.equal(formatMetricValue(18, '%', 1), '18.0%');
+    assert.equal(formatMetricValue(4, '', 0), '4');
   });
 });
 

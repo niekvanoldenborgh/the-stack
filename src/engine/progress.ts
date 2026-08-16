@@ -1,5 +1,5 @@
 import { CUSTOM_METRIC_ID, METRIC_BY_ID } from '../domain/metrics';
-import type { Measurement } from '../domain/types';
+import type { GoalTarget, Measurement } from '../domain/types';
 
 /**
  * Progress tracking.
@@ -100,4 +100,29 @@ export function summariseMeasurements(measurements: Measurement[]): MetricSummar
 function round(value: number, places: number): number {
   const factor = 10 ** places;
   return Math.round(value * factor) / factor;
+}
+
+/**
+ * Percent of the way from a target's baseline reading to its target value,
+ * based on the metric's latest reading. A straight-line fraction between two
+ * points the user chose — it works whether the target sits above or below
+ * the baseline (gaining toward a higher number, losing toward a lower one)
+ * without needing to know which direction "progress" means for this user's
+ * goal. Clamped to [0, 100]: a reading that overshoots the target still reads
+ * as "there", not over 100%.
+ */
+export function goalTargetProgressPct(target: GoalTarget, latestValue: number | null): number | null {
+  if (latestValue === null) return null;
+  const span = target.value - target.baseline;
+  if (span === 0) return latestValue === target.value ? 100 : 0;
+  const pct = ((latestValue - target.baseline) / span) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
+/** Formats a metric value with its unit, matching the Results screen's own convention. */
+export function formatMetricValue(value: number, unit: string, precision: number): string {
+  const num = precision > 0 ? value.toFixed(precision) : `${Math.round(value)}`;
+  if (!unit) return num;
+  if (unit === '%') return `${num}%`;
+  return `${num} ${unit}`;
 }

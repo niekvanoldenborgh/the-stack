@@ -178,7 +178,8 @@ export function seedDemoData(store: Store): void {
 
   // --- Measurements ---------------------------------------------------------
   // A gradual downward bodyweight trend (~3 kg over four weeks) plus a matching
-  // waist trend. Values only — the app never sets a target or judges them.
+  // waist trend. The app never invents these values or judges them — the
+  // downward drift is just demo data mirroring a real logging history.
   const bwStart = 88.0;
   for (let d = WEEKS * 7; d >= 0; d -= 3) {
     const progress = (WEEKS * 7 - d) / (WEEKS * 7);
@@ -191,6 +192,14 @@ export function seedDemoData(store: Store): void {
     const value = +(waistStart - progress * 3 + (rng() - 0.5) * 0.3).toFixed(1);
     getState().addMeasurement({ metricId: 'waist', date: addDays(today(), -d), value });
   }
+
+  // A user-set bodyweight target (THEA-40 round 2) — 78kg is a number this
+  // demo persona typed in themselves, not something the app suggested.
+  // Baseline is their first logged reading, matching how the real UI derives
+  // it from "latest at the moment you set the target".
+  getState().updateProfile({
+    goalTarget: { metricId: 'bodyweight', value: 78, baseline: bwStart, setAt: addDays(today(), -WEEKS * 7) },
+  });
 
   // --- Workouts -------------------------------------------------------------
   // Generate the program from the engine, then log a handful of recent sessions
