@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { WEEKDAY_LABELS, weekdayIndex } from '../lib/date';
 import { Caption, Data, Row, Small } from './components';
-import { colors, radius, spacing, toneColors, type SeverityTone } from './theme';
+import { radius, spacing, useTheme, type SeverityTone } from './theme';
 
 /**
  * Scheduling UI.
@@ -12,8 +12,8 @@ import { colors, radius, spacing, toneColors, type SeverityTone } from './theme'
  * The structure here — a week selector above a time-gutter timeline, with
  * metadata as inline chips and confirm/dismiss as compact icon buttons — is
  * adapted from the appointment patterns in the Medical/Dermatology UI kit.
- * The layout ideas transfer; the palette does not. That kit is blue-on-white
- * and this app is ink and lime, so everything is rebuilt on our own tokens.
+ * The layout ideas transfer; the palette does not — everything is rebuilt on
+ * our own PULSE tokens (`useTheme`), not the kit's.
  */
 
 export interface DayMarker {
@@ -39,6 +39,8 @@ export function WeekStrip({
   selected: string;
   onSelect: (date: string) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <Row gap={spacing.xs} justify="space-between">
       {days.map((day) => {
@@ -57,18 +59,15 @@ export function WeekStrip({
               paddingVertical: spacing.md,
               borderRadius: radius.md,
               borderWidth: 1,
-              borderColor: isSelected ? colors.accent : colors.border,
-              backgroundColor: isSelected ? colors.accent : colors.surface,
+              borderColor: isSelected ? color.primary : color.border,
+              backgroundColor: isSelected ? color.primarySolid : color.surface,
               opacity: pressed ? 0.75 : 1,
             })}
           >
-            <Caption color={isSelected ? colors.accentText : colors.textFaint}>
+            <Caption color={isSelected ? color.onPrimary : color.textTertiary}>
               {WEEKDAY_LABELS[weekdayIndex(day.date)]}
             </Caption>
-            <Data
-              color={isSelected ? colors.accentText : colors.text}
-              style={{ fontSize: 17, marginTop: spacing.xs }}
-            >
+            <Data color={isSelected ? color.onPrimary : color.textPrimary} style={{ fontSize: 17, marginTop: spacing.xs }}>
               {dayNumber}
             </Data>
             {/* Density dot — shows a day has doses without spelling out a count. */}
@@ -82,10 +81,10 @@ export function WeekStrip({
                   day.count === 0
                     ? 'transparent'
                     : isSelected
-                      ? colors.accentText
+                      ? color.onPrimary
                       : day.complete
-                        ? colors.accent
-                        : colors.textFaint,
+                        ? theme.tone('success').fg
+                        : color.textTertiary,
               }}
             />
           </Pressable>
@@ -118,12 +117,14 @@ export function TimelineRow({
   last?: boolean;
   dimmed?: boolean;
 }) {
-  const { fg } = toneColors(tone);
+  const theme = useTheme();
+  const { color } = theme;
+  const { fg } = theme.tone(tone);
 
   return (
     <Row align="stretch" gap={spacing.md} style={{ opacity: dimmed ? 0.55 : 1 }}>
       <View style={{ width: 46, alignItems: 'flex-end', paddingTop: spacing.lg }}>
-        <Data color={colors.textMuted} small>
+        <Data color={color.textSecondary} small>
           {time}
         </Data>
       </View>
@@ -131,7 +132,7 @@ export function TimelineRow({
       {/* Rail. Segments are drawn separately so the first and last rows do not
           trail a line off into nothing. */}
       <View style={{ width: 12, alignItems: 'center' }}>
-        <View style={{ width: 1, flex: 0, height: spacing.lg + 2, backgroundColor: first ? 'transparent' : colors.border }} />
+        <View style={{ width: 1, flex: 0, height: spacing.lg + 2, backgroundColor: first ? 'transparent' : color.border }} />
         <View
           style={{
             width: 9,
@@ -139,10 +140,10 @@ export function TimelineRow({
             borderRadius: 5,
             borderWidth: 2,
             borderColor: fg,
-            backgroundColor: colors.bg,
+            backgroundColor: color.background,
           }}
         />
-        <View style={{ width: 1, flex: 1, backgroundColor: last ? 'transparent' : colors.border }} />
+        <View style={{ width: 1, flex: 1, backgroundColor: last ? 'transparent' : color.border }} />
       </View>
 
       <View style={{ flex: 1, paddingBottom: spacing.md }}>{children}</View>
@@ -160,7 +161,9 @@ export function MetaChip({
   label: string;
   tone?: SeverityTone;
 }) {
-  const fg = tone ? toneColors(tone).fg : colors.textMuted;
+  const theme = useTheme();
+  const { color } = theme;
+  const fg = tone ? theme.tone(tone).fg : color.textSecondary;
   return (
     <Row
       gap={spacing.xs}
@@ -168,9 +171,9 @@ export function MetaChip({
         paddingHorizontal: spacing.sm,
         paddingVertical: 4,
         borderRadius: radius.sm,
-        backgroundColor: colors.surfaceHigh,
+        backgroundColor: color.surfaceMuted,
         borderWidth: 1,
-        borderColor: tone ? `${fg}55` : colors.border,
+        borderColor: tone ? `${fg}55` : color.border,
       }}
     >
       <Ionicons name={icon} size={11} color={fg} />
@@ -195,7 +198,8 @@ export function IconAction({
   filled?: boolean;
   label: string;
 }) {
-  const { fg } = toneColors(tone);
+  const theme = useTheme();
+  const { fg } = theme.tone(tone);
   return (
     <Pressable
       onPress={onPress}
@@ -214,7 +218,7 @@ export function IconAction({
         opacity: pressed ? 0.75 : 1,
       })}
     >
-      <Ionicons name={icon} size={19} color={filled ? colors.accentText : fg} />
+      <Ionicons name={icon} size={19} color={filled ? theme.color.onPrimary : fg} />
     </Pressable>
   );
 }
@@ -229,6 +233,8 @@ export function Segmented<T extends string>({
   value: T;
   onChange: (next: T) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <Row gap={spacing.xs}>
       {options.map((option) => {
@@ -245,12 +251,12 @@ export function Segmented<T extends string>({
               paddingVertical: spacing.sm + 2,
               borderRadius: radius.pill,
               borderWidth: 1,
-              borderColor: selected ? colors.accent : colors.border,
-              backgroundColor: selected ? colors.accent : colors.surface,
+              borderColor: selected ? color.primary : color.border,
+              backgroundColor: selected ? color.primarySolid : color.surface,
               opacity: pressed ? 0.75 : 1,
             })}
           >
-            <Small muted={false} style={{ color: selected ? colors.accentText : colors.textMuted }}>
+            <Small muted={false} style={{ color: selected ? color.onPrimary : color.textSecondary }}>
               {option.label}
             </Small>
           </Pressable>

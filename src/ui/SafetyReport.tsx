@@ -15,7 +15,7 @@ import type {
 import { GOALS_BY_ID, HEALTH_FLAGS_BY_ID } from '../domain/goals';
 import { Badge, Callout, Caption, Display, Row, Small, Title } from './components';
 import { List, ListItem, Section } from './primitives';
-import { colors, spacing, type SeverityTone } from './theme';
+import { spacing, useTheme, type SeverityTone } from './theme';
 
 /**
  * The one safety-report surface (THEA-38).
@@ -57,6 +57,7 @@ export function SafetyReportView({
   blockingCopy?: { title: string; body: string };
   interactionsWithCurrentTitle?: string;
 }) {
+  const theme = useTheme();
   const {
     interactions,
     interactionsWithCurrent,
@@ -96,10 +97,12 @@ export function SafetyReportView({
         <Section tone={2}>
           <Row justify="space-between" align="flex-end">
             <View style={{ flex: 1 }}>
-              <Caption color={colors.textMuted}>Overall risk</Caption>
+              <Caption>Overall risk</Caption>
               <Title style={{ marginTop: spacing.xs }}>{band.label}</Title>
             </View>
-            <Display style={{ color: bandTone === 'accent' ? colors.accent : colors.moderate }}>{band.riskScore}</Display>
+            <Display style={{ color: bandTone === 'accent' ? theme.color.primary : theme.tone('moderate').fg }}>
+              {band.riskScore}
+            </Display>
           </Row>
           {bandNote ? <Small style={{ marginTop: spacing.sm }}>{bandNote}</Small> : null}
         </Section>
@@ -107,7 +110,7 @@ export function SafetyReportView({
 
       {blocking ? (
         <Callout tone="critical" title={blockingCopy?.title ?? 'This has a blocking finding'}>
-          <Small muted={false} style={{ color: colors.text }}>
+          <Small muted={false}>
             {blockingCopy?.body ??
               'Something here is absolutely contraindicated for your health history, or there is a critical interaction. Both mean: do not run this as it stands.'}
           </Small>

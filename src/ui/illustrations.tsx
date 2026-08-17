@@ -1,16 +1,25 @@
 import { SvgXml } from 'react-native-svg';
 
+import { useTheme } from './theme';
+
 /**
  * Illustration source strings, sourced from unDraw (open license, free for
  * commercial use, no attribution required — see assets/CREDITS.md) via the
- * balazser/undraw-svg-collection mirror and recolored to the single brand
- * accent teal (#0F766E, THEA-56 direction A). Every swappable theme fill —
- * the mirror's `var(--primary-svg-color)` marker plus any other non-neutral,
- * non-skin-tone literal fill — was mapped to the brand hue; these source
- * SVGs only ever used one flat brand fill each (no gradient tint/shade
- * variants), so a single hex swap covers all four. Structural ink (#2f2e41 /
- * #3f3d56), neutral greys and the inclusive skin-tone palette were left
- * untouched so recoloring never erases a figure's skin tone.
+ * balazser/undraw-svg-collection mirror. Every swappable theme fill — the
+ * mirror's `var(--primary-svg-color)` marker plus any other non-neutral,
+ * non-skin-tone literal fill — was originally mapped to one brand hue; these
+ * source SVGs only ever use one flat brand fill each (no gradient
+ * tint/shade variants), so `Illustration` below recolors that one fill to
+ * the live theme's `primary` at render time rather than baking a fixed hex
+ * into four ~15KB strings. Structural ink (#2f2e41 / #3f3d56), neutral
+ * greys and the inclusive skin-tone palette are untouched by that swap, so
+ * recoloring never erases a figure's skin tone.
+ *
+ * Source strings below still carry the pre-PULSE brand hex (#0F766E, the
+ * THEA-56 teal) as their literal fill — that's the token `Illustration`
+ * looks for and replaces. Do not hand-recolor these strings to violet; that
+ * would make the runtime replace below a no-op and break dark mode (THEA-63
+ * lime-drift lesson: one change, one place).
  *
  * Rendered via react-native-svg's SvgXml rather than an SVG-to-component
  * Metro transform — there is no react-native-svg-transformer configured in
@@ -32,12 +41,17 @@ const REGISTRY: Record<IllustrationName, string> = {
   noMatch: noMatchSvg,
 };
 
+/** The one brand fill baked into every source string above — see the file
+ *  doc-comment. Recolored to the live theme's `primary` at render time. */
+const LEGACY_BRAND_FILL = /#0F766E/g;
+
 /**
  * A single-brand-hue empty-state illustration. Purely decorative — it never
  * carries information on its own (see EmptyState, which always pairs it with
  * title/body text), so it is hidden from screen readers.
  */
 export function Illustration({ name, size = 160 }: { name: IllustrationName; size?: number }) {
-  const xml = REGISTRY[name];
+  const theme = useTheme();
+  const xml = REGISTRY[name].replace(LEGACY_BRAND_FILL, theme.color.primary);
   return <SvgXml xml={xml} width={size} height={size} accessible={false} importantForAccessibility="no" />;
 }

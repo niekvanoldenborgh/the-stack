@@ -46,7 +46,7 @@ Shared components live in `src/ui/`, never in a route file. `RiskPicker` is used
 - There is **no `babel.config.js`**. `babel-preset-expo` is nested under `expo/node_modules` and is not resolvable from the project root, so a custom config breaks bundling. Expo's default handles it.
 - **Splash config lives in the `expo-splash-screen` plugin**, not the legacy top-level `splash` key. Do not reintroduce both.
 - `formatRange` shows years when a range leaves the current year. Cycle plans routinely run 60 weeks; without this a plan reads as eight weeks.
-- The persisted store is at **version 5**. Any new required `UserProfile` field needs a `migrate` branch, and the engine should still tolerate its absence (`profile.riskTolerance ?? 3`).
+- The persisted store is at **version 6**. Any new required `UserProfile` field needs a `migrate` branch, and the engine should still tolerate its absence (`profile.riskTolerance ?? 3`).
 
 ## Commands
 

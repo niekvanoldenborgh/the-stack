@@ -1,26 +1,32 @@
 import { Tabs } from 'expo-router';
 import { Calendar, House, SquarePlus, Settings, TrendingUp } from 'lucide-react-native';
-import { StyleSheet } from 'react-native';
 
-import { colors, fonts, typography } from '../../src/ui/theme';
+import { fonts, typography, useTheme } from '../../src/ui/theme';
 
 export default function TabsLayout() {
+  const theme = useTheme();
+  const { color } = theme;
+  // Floating/elevated feel (design spec §3.7): no top border, a soft shadow
+  // instead. `theme.shadow(2)` is the "raised" tier's shadow only, without
+  // pulling in its `surfaceElevated` background — the bar stays on `surface`.
+  const barShadow = theme.shadow(2);
+
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTintColor: colors.text,
+        headerStyle: { backgroundColor: color.background },
+        headerTintColor: color.textPrimary,
         headerTitleStyle: typography.heading,
         headerShadowVisible: false,
-        sceneStyle: { backgroundColor: colors.bg },
+        sceneStyle: { backgroundColor: color.background },
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: StyleSheet.hairlineWidth,
+          backgroundColor: color.surface,
+          borderTopWidth: 0,
+          ...barShadow,
         },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textFaint,
-        tabBarLabelStyle: { fontSize: 11, fontFamily: fonts.sansMedium },
+        tabBarActiveTintColor: color.primary,
+        tabBarInactiveTintColor: color.textSecondary,
+        tabBarLabelStyle: { fontSize: 11, fontFamily: fonts.medium },
       }}
     >
       <Tabs.Screen
@@ -28,7 +34,7 @@ export default function TabsLayout() {
         options={{
           title: 'Summary',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <House color={color} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <House color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -36,7 +42,7 @@ export default function TabsLayout() {
         options={{
           title: 'Logger',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <SquarePlus color={color} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <SquarePlus color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -44,7 +50,7 @@ export default function TabsLayout() {
         options={{
           title: 'Results',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <TrendingUp color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -52,7 +58,7 @@ export default function TabsLayout() {
         options={{
           title: 'Calendar',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <Calendar color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -60,7 +66,7 @@ export default function TabsLayout() {
         options={{
           title: 'Settings',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <Settings color={c} size={size} strokeWidth={1.75} />,
         }}
       />
     </Tabs>

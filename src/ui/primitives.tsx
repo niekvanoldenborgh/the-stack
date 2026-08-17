@@ -1,17 +1,18 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Caption, Row, Small } from './components';
-import { colors, elevation, fonts, radius, shadow, spacing, toneColors, typography, type Elevation, type SeverityTone } from './theme';
+import { radius, spacing, typography, useTheme, type Elevation, type SeverityTone } from './theme';
 
 /**
- * Redesign primitives (THEA-38).
+ * Redesign primitives (THEA-38, retinted for PULSE — THEA-69).
  *
- * The house style before this file was "border around everything, uniform
+ * The house style before THEA-38 was "border around everything, uniform
  * padding, no focal point" — every screen read as a stack of identical
- * bordered cards. These four primitives are the fix, and every screen that
- * gets redesigned should reach for these instead of a bespoke `Card`:
+ * bordered cards. These four primitives are the fix, and every screen
+ * should reach for these instead of a bespoke `Card`:
  *
  *  1. `Section` — groups content by surface tone, not a border.
  *  2. `FocalMetric` — the one oversized number a screen is about.
@@ -20,17 +21,15 @@ import { colors, elevation, fonts, radius, shadow, spacing, toneColors, typograp
  */
 
 // ---------------------------------------------------------------------------
-// 1. Section — borderless grouping via surface tone + soft shadow
+// 1. Section — borderless grouping via surface tone + shadow
 // ---------------------------------------------------------------------------
 
 /**
  * Groups related content into one tone-shifted panel. Spacing carries the
  * hierarchy: a large gap separates one Section from the next, a tight gap
- * separates the rows inside it. No border — on this light theme, elevation
- * reads through a soft drop shadow instead (there's nowhere darker than
- * `colors.bg` to step down into), so a tone-2+ panel (the one focal block a
- * screen leads with) gets the stronger shadow and everything else gets a
- * bare hint of lift.
+ * separates the rows inside it. No border — elevation reads through the
+ * theme's tier shadow (`surfaceStyle`, `src/ui/theme.ts`), which is a soft
+ * drop shadow in light mode and mainly a tone step in dark mode.
  */
 export function Section({
   children,
@@ -39,36 +38,50 @@ export function Section({
   tone = 1,
   gap = spacing.md,
   last = false,
+  gradient = false,
   style,
 }: {
   children: ReactNode;
   /** Rendered as a caption above the panel, outside the tone shift. */
   title?: string;
   action?: ReactNode;
-  /** Elevation step for the panel background. Most sections want 1. */
+  /** Elevation step for the panel background. Most sections want 1; the one
+   *  focal block a screen leads with wants 2 (or 3 for a full hero). */
   tone?: Elevation;
   /** Vertical gap between direct children inside the panel. */
   gap?: number;
   /** Drop the trailing margin — for the last section on a screen. */
   last?: boolean;
+  /** Fill with the brand gradient instead of a flat surface. Hero/summary
+   *  elements only (design spec §3.3) — content inside should use
+   *  `theme.color.onPrimary`. */
+  gradient?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  const theme = useTheme();
+  const panelRadius = tone >= 3 ? radius.xl : radius.lg;
+  const surface = theme.surface(tone);
+
   return (
     <View style={[{ marginBottom: last ? 0 : spacing.xxl }, style]}>
       {title ? (
         <Row justify="space-between" align="center" style={{ marginBottom: spacing.sm }}>
-          <Caption color={colors.textMuted}>{title}</Caption>
+          <Caption>{title}</Caption>
           {action}
         </Row>
       ) : null}
-      <View
-        style={[
-          { backgroundColor: elevation[tone], borderRadius: radius.lg, padding: spacing.xl, gap },
-          tone >= 2 ? shadow.medium : shadow.low,
-        ]}
-      >
-        {children}
-      </View>
+      {gradient ? (
+        <LinearGradient
+          colors={theme.color.accentGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[{ borderRadius: panelRadius, padding: spacing.xl, gap }, theme.shadow(tone)]}
+        >
+          {children}
+        </LinearGradient>
+      ) : (
+        <View style={[{ borderRadius: panelRadius, padding: spacing.xl, gap }, surface]}>{children}</View>
+      )}
     </View>
   );
 }
@@ -87,34 +100,42 @@ export function FocalMetric({
   value,
   unit,
   meta,
-  tone = colors.text,
+  tone,
+  metaTone,
   children,
   style,
 }: {
   /** Short label above the figure — what this number is. */
   eyebrow?: string;
-  /** The figure itself. A short string, set in the largest mono weight. */
+  /** The figure itself. A short string, set in the largest weight. */
   value: string;
   /** Trailing unit, set smaller and muted, e.g. "mcg" or "in 6h". */
   unit?: string;
   /** A line below the figure — context, not a repeat of the eyebrow. */
   meta?: string;
+  /** Figure colour. Defaults to `textPrimary`; pass `theme.color.onPrimary`
+   *  on a gradient hero. */
   tone?: string;
+  /** Colour for `meta`/`unit`; defaults to `textSecondary`. */
+  metaTone?: string;
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
+  const theme = useTheme();
+  const figureColor = tone ?? theme.color.textPrimary;
+  const metaColor = metaTone ?? theme.color.textSecondary;
   return (
     <View style={style}>
-      {eyebrow ? <Caption color={colors.accent}>{eyebrow}</Caption> : null}
+      {eyebrow ? <Caption color={theme.color.primary}>{eyebrow}</Caption> : null}
       <Row align="flex-end" gap={spacing.xs} style={{ marginTop: eyebrow ? spacing.xs : 0 }}>
-        <Text style={{ fontFamily: fonts.displayLight, fontSize: 56, letterSpacing: -2.5, lineHeight: 58, color: tone }}>
-          {value}
-        </Text>
-        {unit ? (
-          <Text style={[typography.data, { color: colors.textMuted, marginBottom: 8 }]}>{unit}</Text>
-        ) : null}
+        <Text style={[typography.metric, { color: figureColor }]}>{value}</Text>
+        {unit ? <Text style={[typography.data, { color: metaColor, marginBottom: 8 }]}>{unit}</Text> : null}
       </Row>
-      {meta ? <Small style={{ marginTop: spacing.xs }}>{meta}</Small> : null}
+      {meta ? (
+        <Small muted={false} style={{ marginTop: spacing.xs, color: metaColor }}>
+          {meta}
+        </Small>
+      ) : null}
       {children}
     </View>
   );
@@ -144,8 +165,9 @@ export function Disclosure({
   defaultOpen?: boolean;
   tone?: SeverityTone;
 }) {
+  const theme = useTheme();
   const [open, setOpen] = useState(defaultOpen);
-  const fg = tone ? toneColors(tone).fg : colors.text;
+  const fg = tone ? theme.tone(tone).fg : theme.color.textPrimary;
 
   return (
     <View>
@@ -163,7 +185,11 @@ export function Disclosure({
             </Small>
             {!open && summary ? <Small style={{ marginTop: 2 }}>{summary}</Small> : null}
           </View>
-          {open ? <ChevronUp size={16} color={colors.textMuted} /> : <ChevronDown size={16} color={colors.textMuted} />}
+          {open ? (
+            <ChevronUp size={16} color={theme.color.textSecondary} />
+          ) : (
+            <ChevronDown size={16} color={theme.color.textSecondary} />
+          )}
         </Row>
       </Pressable>
       {open ? <View style={{ marginTop: spacing.md }}>{children}</View> : null}
@@ -196,7 +222,7 @@ export function ListItem({
   onPress,
   children,
 }: {
-  /** A lucide icon element, e.g. `<Syringe size={16} color={colors.textMuted} />`. */
+  /** A lucide icon element, e.g. `<Syringe size={16} color={theme.color.textSecondary} />`. */
   icon?: ReactNode;
   title: string;
   detail?: string;
@@ -209,7 +235,9 @@ export function ListItem({
   /** Extra content below `detail`, full width within the row — e.g. a progress bar. */
   children?: ReactNode;
 }) {
-  const markColor = tone ? toneColors(tone).fg : colors.accent;
+  const theme = useTheme();
+  const { color } = theme;
+  const markColor = tone ? theme.tone(tone).fg : checked ? theme.tone('success').fg : color.primary;
   const Wrapper = onPress ? Pressable : View;
 
   return (
@@ -227,7 +255,7 @@ export function ListItem({
                   height: 14,
                   borderRadius: 4,
                   borderWidth: 1.5,
-                  borderColor: checked ? markColor : colors.borderBright,
+                  borderColor: checked ? markColor : color.borderStrong,
                   backgroundColor: checked ? markColor : 'transparent',
                 }}
               />
@@ -237,7 +265,7 @@ export function ListItem({
         </View>
         <View style={{ flex: 1 }}>
           <Row justify="space-between" align="flex-start" gap={spacing.md}>
-            <Text style={[typography.body, { color: colors.text, flex: 1 }]}>{title}</Text>
+            <Text style={[typography.body, { color: color.textPrimary, flex: 1 }]}>{title}</Text>
             {meta}
           </Row>
           {detail ? <Small style={{ marginTop: 2 }}>{detail}</Small> : null}

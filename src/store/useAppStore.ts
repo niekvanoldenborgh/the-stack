@@ -24,8 +24,7 @@ import { addDays, today } from '../lib/date';
 /** Body-measurement display units. Dose units are never converted (see AGENTS.md). */
 export type MassUnit = 'kg' | 'lb';
 export type LengthUnit = 'cm' | 'ft';
-/** 'light' is not yet implemented — the palette refactor is tracked separately. */
-export type ThemePreference = 'system' | 'dark';
+export type ThemePreference = 'system' | 'light' | 'dark';
 
 /** Reminder categories the user can silence independently. */
 export interface NotificationPurposes {
@@ -129,7 +128,7 @@ const DEFAULT_SETTINGS: Settings = {
   customTimes: {},
   massUnit: 'kg',
   lengthUnit: 'cm',
-  theme: 'dark',
+  theme: 'system',
   // Alert once, at the injection time. The alarm screen lets the user add
   // lead-in offsets (e.g. two minutes before).
   alarmOffsetsMin: [0],
@@ -322,7 +321,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'the-stack-v1',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => AsyncStorage),
       /**
        * v1 profiles predate the risk dial and current-use tracking. Default to
@@ -343,6 +342,13 @@ export const useAppStore = create<AppState>()(
        * points in `domain/sideEffects.ts#severityBand`) rather than dropped,
        * so a symptom logged before this change still renders and buckets
        * correctly.
+       *
+       * v5→v6 (THEA-69 PULSE) gives `ThemePreference` a real `'light'` value.
+       * Before this, `theme` defaulted to `'dark'` but the app only ever
+       * rendered one flat palette (Clinical Light) — the setting was
+       * vestigial. Reset every persisted preference to `'system'` rather
+       * than honouring a stale `'dark'` value, so no existing user is
+       * silently switched into a real dark theme they never chose.
        */
       migrate: (persisted, version) => {
         const state = persisted as {
@@ -372,6 +378,9 @@ export const useAppStore = create<AppState>()(
           state.sideEffectLogs = state.sideEffectLogs.map((log) =>
             typeof log.severity === 'string' ? { ...log, severity: legacyMidpoint[log.severity] ?? 5 } : log,
           );
+        }
+        if (version < 6 && state?.settings) {
+          state.settings = { ...state.settings, theme: 'system' };
         }
         return state as never;
       },

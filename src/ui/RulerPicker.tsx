@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 
 import { Caption, Data, Metric, Row } from './components';
-import { colors, radius, spacing } from './theme';
+import { radius, spacing, useTheme } from './theme';
 
 /**
  * A scrubbable ruler for numeric entry.
@@ -43,6 +43,8 @@ export function RulerPicker({
   unit?: string;
   precision?: number;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   const scrollRef = useRef<ScrollView>(null);
   const [width, setWidth] = useState(0);
   // Tracks the value the scroll position currently represents, so an incoming
@@ -97,9 +99,9 @@ export function RulerPicker({
   return (
     <View>
       <Row justify="center" align="flex-end" gap={spacing.xs}>
-        <Metric color={colors.text}>{value.toFixed(decimals)}</Metric>
+        <Metric>{value.toFixed(decimals)}</Metric>
         {unit ? (
-          <Data color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+          <Data color={color.textSecondary} style={{ marginBottom: spacing.sm }}>
             {unit}
           </Data>
         ) : null}
@@ -126,12 +128,10 @@ export function RulerPicker({
                     width: major ? 2 : 1,
                     height: major ? 30 : 18,
                     borderRadius: 1,
-                    backgroundColor: major ? colors.borderBright : colors.border,
+                    backgroundColor: major ? color.borderStrong : color.border,
                   }}
                 />
-                {major ? (
-                  <Caption color={colors.textFaint}>{Number(tickValue.toFixed(decimals))}</Caption>
-                ) : null}
+                {major ? <Caption color={color.textTertiary}>{Number(tickValue.toFixed(decimals))}</Caption> : null}
               </View>
             );
           })}
@@ -147,7 +147,7 @@ export function RulerPicker({
             width: 2,
             height: 36,
             borderRadius: 1,
-            backgroundColor: colors.accent,
+            backgroundColor: color.primary,
           }}
         />
         <View
@@ -158,8 +158,8 @@ export function RulerPicker({
             top: 36,
             width: 10,
             height: 10,
-            borderRadius: radius.sm,
-            backgroundColor: colors.accent,
+            borderRadius: radius.xs,
+            backgroundColor: color.primary,
           }}
         />
       </View>

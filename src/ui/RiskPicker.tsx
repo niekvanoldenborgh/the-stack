@@ -3,34 +3,27 @@ import { Pressable } from 'react-native';
 import { RISK_TOLERANCES } from '../domain/goals';
 import type { RiskTolerance } from '../domain/types';
 import { Badge, Card, Data, Divider, Heading, Row, Small, Spacer } from './components';
-import { colors, radius, spacing, type SeverityTone } from './theme';
+import { radius, spacing, useTheme, type SeverityTone } from './theme';
 
-/** Colour the dial by how far up it is turned, so level 5 never looks benign. */
+/**
+ * Colour the dial by how far up it is turned, so level 5 never looks benign.
+ *
+ * PULSE (THEA-68 §3.6) moves level 3 off the brand accent onto `moderate` —
+ * every level now sits inside the reserved severity scale, so the whole dial
+ * stays visually clear of the violet brand colour (design spec §2.1). Dose
+ * and selection logic are untouched; this is colour only.
+ */
 export function riskLevelTone(level: RiskTolerance): SeverityTone {
   if (level >= 5) return 'critical';
   if (level === 4) return 'high';
-  if (level === 3) return 'accent';
+  if (level === 3) return 'moderate';
   return 'info';
 }
 
-function toneColor(tone: SeverityTone): string {
-  switch (tone) {
-    case 'critical':
-      return colors.critical;
-    case 'high':
-      return colors.high;
-    case 'moderate':
-      return colors.moderate;
-    case 'info':
-      return colors.info;
-    case 'accent':
-      return colors.accent;
-  }
-}
-
 /**
- * The risk dial. Shared between onboarding and the recommendation screen so
- * the control the user sets is literally the same one they later adjust.
+ * The risk dial. Shared between onboarding, the recommendation screen and
+ * the Me tab, so the control the user sets is literally the same one they
+ * later adjust.
  */
 export function RiskPicker({
   value,
@@ -39,6 +32,8 @@ export function RiskPicker({
   value: RiskTolerance;
   onChange: (next: RiskTolerance) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   const active = RISK_TOLERANCES.find((r) => r.level === value);
 
   return (
@@ -46,7 +41,7 @@ export function RiskPicker({
       <Row gap={spacing.xs} justify="space-between">
         {RISK_TOLERANCES.map((option) => {
           const selected = option.level === value;
-          const tint = toneColor(riskLevelTone(option.level));
+          const { fg, bg } = theme.tone(riskLevelTone(option.level));
           return (
             <Pressable
               key={option.level}
@@ -60,12 +55,12 @@ export function RiskPicker({
                 paddingVertical: spacing.md,
                 borderRadius: radius.sm,
                 borderWidth: 1,
-                borderColor: selected ? tint : colors.border,
-                backgroundColor: selected ? `${tint}1F` : colors.surfaceAlt,
+                borderColor: selected ? fg : color.border,
+                backgroundColor: selected ? bg : color.surfaceMuted,
                 opacity: pressed ? 0.75 : 1,
               })}
             >
-              <Data color={selected ? tint : colors.textFaint} style={{ fontSize: 19 }}>
+              <Data color={selected ? fg : color.textTertiary} style={{ fontSize: 19 }}>
                 {option.level}
               </Data>
             </Pressable>
@@ -82,9 +77,7 @@ export function RiskPicker({
           </Row>
           <Small style={{ marginTop: spacing.xs }}>{active.blurb}</Small>
           <Spacer size={spacing.sm} />
-          <Small muted={false} style={{ color: colors.text }}>
-            {active.effect}
-          </Small>
+          <Small muted={false}>{active.effect}</Small>
         </>
       ) : null}
     </Card>

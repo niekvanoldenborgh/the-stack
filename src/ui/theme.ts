@@ -1,192 +1,191 @@
-/**
- * Visual language: clinical light.
- *
- * The reference points are premium telehealth products and Linear's light
- * mode, not a lab notebook — this is software people should feel comfortable
- * reading in a waiting room, so it trades the previous near-black/acid-lime
- * instrument-panel look for white surfaces, generous air and a single
- * restrained accent.
- *
- * Three decisions carry the whole look:
- *
- *  1. Type is one family, not a split display/body trick. Inter carries
- *     everything from the largest metric to the smallest label — 700 for
- *     display headings, 600 where the old theme used a "medium" weight, 400
- *     for reading text. IBM Plex Mono is kept, unchanged, for every quantity
- *     and unit: that convention is functional (figures line up, digits don't
- *     shift width), not palette, and a neutral mono reads just as well on a
- *     light surface as a dark one.
- *  2. Ink, not black, on white and near-white, not grey. `#14171F` against
- *     `#FFFFFF`/`#F6F7F9` keeps body text short of true #000/#FFF contrast
- *     harshness while still reading as unambiguously light.
- *  3. One accent — a deep teal — kept clear of the severity scale. Colour is
- *     load-bearing information in this app, so the brand colour must never be
- *     mistakable for a warning colour, and on a light background the
- *     severity hues themselves are darkened/desaturated from their old
- *     dark-surface values so they still pass contrast on white.
- *
- * Elevation is shadow-based here, not the near-black stepping ladder the
- * dark theme used — a light surface has nowhere darker to step down into, so
- * depth comes from `shadow` tokens (see below) applied to panels instead.
- */
+import { createContext, createElement, useContext, useMemo, type ReactNode } from 'react';
+import { useColorScheme, type TextStyle, type ViewStyle } from 'react-native';
 
-export const colors = {
-  // Surfaces, brightest to the one recessed tone used for sunken wells.
-  bgDeep: '#EEF1F5',
-  bg: '#FFFFFF',
-  surface: '#F6F7F9',
-  surfaceAlt: '#EEF1F4',
-  surfaceHigh: '#E4E8ED',
-  border: '#E2E5EA',
-  borderBright: '#CBD1D9',
-
-  // Warm-dark ink, not pure black.
-  text: '#14171F',
-  textMuted: '#5B6270',
-  textFaint: '#8B92A0',
-
-  // Deep teal. Deliberately outside the severity range.
-  accent: '#0F766E',
-  accentDim: '#DCF3EF',
-  accentText: '#FFFFFF',
-
-  // Severity scale, re-tuned for a light surface — darkened/desaturated from
-  // the dark-theme values so each still reads at AA contrast on white, and
-  // lightness is varied across the four (not just hue) so the ladder stays
-  // distinguishable under a colour-vision-deficiency simulation.
-  critical: '#B3261E',
-  criticalDim: '#FBEAE9',
-  high: '#A35200',
-  highDim: '#FCEEDD',
-  moderate: '#806400',
-  moderateDim: '#FAF3D6',
-  info: '#0369A1',
-  infoDim: '#E3F2FB',
-
-  evidenceA: '#0F766E',
-  evidenceB: '#4D9A8F',
-  evidenceC: '#806400',
-  evidenceD: '#B3261E',
-} as const;
+import { useAppStore, type ThemePreference } from '../store/useAppStore';
 
 /**
- * Inter + IBM Plex Mono, bundled locally.
+ * Visual language: PULSE (THEA-68 / THEA-69).
  *
- * Each weight is its own font family, so `fontWeight` must never be set
- * alongside these — doing both makes Android fall back to the system font and
- * makes react-native-web paint a synthetic faux-bold over an already-bold face.
+ * Two real themes — light and dark — behind one semantic token set. The
+ * previous "Clinical Light" iteration (THEA-55/59) shipped a single flat
+ * `colors` object; PULSE replaces that with `ColorTokens` (this file) plus a
+ * `ThemeProvider`/`useTheme()` (bottom of this file) so every component reads
+ * `theme.color.x` instead of importing a static palette. `spacing`, `radius`,
+ * `typography` and `fonts` stay theme-independent exports, exactly as before
+ * — only colour and elevation are theme-aware.
+ *
+ * Full token rationale, contrast notes and the safety reconciliation
+ * (severity scale vs brand accent, evidence-badge exemption, chart
+ * single-hue rule) live in the THEA-68 design spec doc ("pulse-design-spec")
+ * on that issue. Do not "improve" the numbers here without checking that doc
+ * — the severity hex values in particular are pinned so this redesign cannot
+ * silently drift brand violet into warning territory (AGENTS.md).
  */
-export const fonts = {
-  display: 'Inter_700Bold',
-  displayLight: 'Inter_400Regular',
-  sans: 'Inter_400Regular',
-  sansMedium: 'Inter_600SemiBold',
-  mono: 'IBMPlexMono_500Medium',
-  monoBold: 'IBMPlexMono_600SemiBold',
-} as const;
 
-export const typography = {
-  /** Screen titles. Heavy and tight. */
-  display: { fontFamily: fonts.display, fontSize: 32, letterSpacing: -0.8, lineHeight: 38 },
-  /** Large figures — doses, risk scores. Inter has no hairline weight, so the
-   *  old extreme-weight contrast trick is replaced by scale contrast alone. */
-  metric: { fontFamily: fonts.displayLight, fontSize: 44, letterSpacing: -1.2, lineHeight: 48 },
-  title: { fontFamily: fonts.sansMedium, fontSize: 19, letterSpacing: -0.3, lineHeight: 25 },
-  heading: { fontFamily: fonts.sansMedium, fontSize: 16, letterSpacing: -0.1, lineHeight: 21 },
-  body: { fontFamily: fonts.sans, fontSize: 15, lineHeight: 23 },
-  bodyStrong: { fontFamily: fonts.sansMedium, fontSize: 15, lineHeight: 23 },
-  small: { fontFamily: fonts.sans, fontSize: 13, lineHeight: 20 },
-  /** Quantities. Monospaced so columns of figures line up and read as data. */
-  data: { fontFamily: fonts.mono, fontSize: 15, letterSpacing: -0.2 },
-  dataSmall: { fontFamily: fonts.mono, fontSize: 12.5, letterSpacing: -0.1 },
-  /** Section labels and badges. Wide-tracked mono. */
-  caption: { fontFamily: fonts.monoBold, fontSize: 10.5, letterSpacing: 1.3 },
-} as const;
+export type ThemeMode = 'light' | 'dark';
 
-export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
-} as const;
+export type SeverityTone = 'critical' | 'high' | 'moderate' | 'info' | 'accent' | 'success';
 
-/** Moderate-to-soft radii — Linear's card radius, not sharp and not a pill. */
-export const radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  pill: 999,
-} as const;
-
-/**
- * Soft-shadow tokens for elevation on a light surface. Depth comes from a
- * diffuse drop shadow, not a step up a near-black tone ladder — there is
- * nowhere darker than `colors.bg` to step down into on a light theme.
- * `Section` (src/ui/primitives.tsx) and `Card`/`StatTile` (src/ui/components.tsx)
- * are the consumers.
- */
-export const shadow = {
-  low: {
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  medium: {
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-} as const;
-
-/**
- * Surface-tone ladder — 0 is the screen itself; 3 is the highest a piece of
- * content sits above it. On this light theme the steps are close together
- * (white → near-white → a faint recessed grey) because depth now reads
- * mainly through `shadow`, not through big luminance jumps.
- */
-export type Elevation = 0 | 1 | 2 | 3;
-
-export const elevation: Record<Elevation, string> = {
-  0: colors.bg,
-  1: colors.surface,
-  2: colors.surfaceAlt,
-  3: colors.surfaceHigh,
-};
-
-export type SeverityTone = 'critical' | 'high' | 'moderate' | 'info' | 'accent';
-
-export function toneColors(tone: SeverityTone): { fg: string; bg: string } {
-  switch (tone) {
-    case 'critical':
-      return { fg: colors.critical, bg: colors.criticalDim };
-    case 'high':
-      return { fg: colors.high, bg: colors.highDim };
-    case 'moderate':
-      return { fg: colors.moderate, bg: colors.moderateDim };
-    case 'info':
-      return { fg: colors.info, bg: colors.infoDim };
-    case 'accent':
-      return { fg: colors.accent, bg: colors.accentDim };
-  }
+interface ToneColor {
+  fg: string;
+  soft: string;
+  softText: string;
 }
 
-export function evidenceColor(tier: 'A' | 'B' | 'C' | 'D'): string {
-  switch (tier) {
-    case 'A':
-      return colors.evidenceA;
-    case 'B':
-      return colors.evidenceB;
-    case 'C':
-      return colors.evidenceC;
-    case 'D':
-      return colors.evidenceD;
+export interface ColorTokens {
+  background: string;
+  surface: string;
+  surfaceElevated: string;
+  surfaceSunken: string;
+  surfaceMuted: string;
+
+  textPrimary: string;
+  textSecondary: string;
+  textTertiary: string;
+
+  border: string;
+  borderStrong: string;
+  divider: string;
+  overlay: string;
+
+  primary: string;
+  primaryPressed: string;
+  primarySolid: string;
+  onPrimary: string;
+  primarySoft: string;
+  primarySoftText: string;
+  accentGradient: readonly [string, string, string];
+
+  success: string;
+  successSoft: string;
+  successText: string;
+
+  disabled: string;
+  disabledContent: string;
+
+  /** Severity/status scale — reserved, never reused as a general accent. */
+  severity: Record<Exclude<SeverityTone, 'accent'>, ToneColor>;
+
+  /** Evidence-tier badges only — never a chart series (AGENTS.md). */
+  evidence: Record<'A' | 'B' | 'C' | 'D', string>;
+
+  chartInk: string;
+  chartTrack: string;
+  chartPeakLabel: string;
+}
+
+const LIGHT_COLORS: ColorTokens = {
+  background: '#F3F4F8',
+  surface: '#FFFFFF',
+  surfaceElevated: '#FFFFFF',
+  surfaceSunken: '#EEF0F5',
+  surfaceMuted: '#E9EBF0',
+
+  textPrimary: '#151A22',
+  textSecondary: '#8B93A1',
+  textTertiary: '#AEB4BF',
+
+  border: '#D9DDE4',
+  borderStrong: '#C6CCD6',
+  divider: '#ECEEF2',
+  overlay: 'rgba(21,26,34,0.45)',
+
+  primary: '#5A54D1',
+  primaryPressed: '#4A45B8',
+  primarySolid: '#5A54D1',
+  onPrimary: '#FFFFFF',
+  primarySoft: '#EFEDFD',
+  primarySoftText: '#4A45B8',
+  accentGradient: ['#5A54D1', '#7B5BE0', '#9D6BF0'],
+
+  success: '#1FA968',
+  successSoft: '#E4F8EE',
+  successText: '#157A4B',
+
+  disabled: '#EEF0F5',
+  disabledContent: '#AEB4BF',
+
+  severity: {
+    critical: { fg: '#C42A43', soft: '#FBE4E8', softText: '#A31F35' },
+    high: { fg: '#B4551A', soft: '#FBEADD', softText: '#8F410F' },
+    moderate: { fg: '#E39A00', soft: '#FAF0D5', softText: '#8A6100' },
+    info: { fg: '#0E7490', soft: '#DFF3F8', softText: '#0B5E76' },
+    success: { fg: '#1FA968', soft: '#E4F8EE', softText: '#157A4B' },
+  },
+
+  evidence: { A: '#1FA968', B: '#4C8DB8', C: '#E39A00', D: '#C42A43' },
+
+  chartInk: '#5A54D1',
+  chartTrack: '#E9EBF0',
+  chartPeakLabel: '#151A22',
+};
+
+const DARK_COLORS: ColorTokens = {
+  background: '#0F1117',
+  surface: '#181B23',
+  surfaceElevated: '#20242E',
+  surfaceSunken: '#13161C',
+  surfaceMuted: '#252A34',
+
+  textPrimary: '#F4F5F8',
+  textSecondary: '#969EAD',
+  textTertiary: '#6E7683',
+
+  border: '#343A47',
+  borderStrong: '#3F4757',
+  divider: '#242A34',
+  overlay: 'rgba(5,6,10,0.60)',
+
+  primary: '#817AF4',
+  primaryPressed: '#6E67E0',
+  primarySolid: '#5A54D1',
+  onPrimary: '#FFFFFF',
+  primarySoft: '#292641',
+  primarySoftText: '#A99FF7',
+  accentGradient: ['#5A54D1', '#7459D9', '#8B63E8'],
+
+  success: '#45C987',
+  successSoft: '#183629',
+  successText: '#8FE3B7',
+
+  disabled: '#20242E',
+  disabledContent: '#5B6472',
+
+  severity: {
+    critical: { fg: '#FF6B85', soft: '#3A1721', softText: '#FF9DAF' },
+    high: { fg: '#FF9E5C', soft: '#3A2412', softText: '#FFC199' },
+    moderate: { fg: '#F2B84D', soft: '#3A2E12', softText: '#F6CE82' },
+    info: { fg: '#55C7DE', soft: '#123039', softText: '#8BDBEB' },
+    success: { fg: '#45C987', soft: '#183629', softText: '#8FE3B7' },
+  },
+
+  evidence: { A: '#45C987', B: '#6BA8D8', C: '#F2B84D', D: '#FF6B85' },
+
+  chartInk: '#817AF4',
+  chartTrack: '#252A34',
+  chartPeakLabel: '#F4F5F8',
+};
+
+export const COLOR_TOKENS: Record<ThemeMode, ColorTokens> = { light: LIGHT_COLORS, dark: DARK_COLORS };
+
+/**
+ * `tone` → { fg, bg, softText }, theme-aware.
+ *
+ * `'accent'` is brand emphasis, not a severity — it routes to
+ * `primary`/`primarySoft`/`primarySoftText` rather than the reserved
+ * severity table (§2.1 of the design spec). Every other tone reads straight
+ * off `color.severity`.
+ */
+export function toneColors(color: ColorTokens, tone: SeverityTone): { fg: string; bg: string; softText: string } {
+  if (tone === 'accent') {
+    return { fg: color.primary, bg: color.primarySoft, softText: color.primarySoftText };
   }
+  const t = color.severity[tone];
+  return { fg: t.fg, bg: t.soft, softText: t.softText };
+}
+
+export function evidenceColor(color: ColorTokens, tier: 'A' | 'B' | 'C' | 'D'): string {
+  return color.evidence[tier];
 }
 
 export const EVIDENCE_LABELS: Record<'A' | 'B' | 'C' | 'D', string> = {
@@ -202,3 +201,188 @@ export const LEGAL_LABELS: Record<string, string> = {
   cosmetic_otc: 'Cosmetic (OTC)',
   supplement: 'Supplement',
 };
+
+// ---------------------------------------------------------------------------
+// Type — Inter, per-weight families (§3.1). Never set `fontWeight` alongside
+// `fontFamily`: each weight below is its own family, so combining the two
+// makes Android fall back to the system font and react-native-web paint a
+// synthetic faux-bold over an already-bold face (AGENTS.md).
+// ---------------------------------------------------------------------------
+
+export const fonts = {
+  displayBold: 'Inter_800ExtraBold',
+  bold: 'Inter_700Bold',
+  semibold: 'Inter_600SemiBold',
+  medium: 'Inter_500Medium',
+  regular: 'Inter_400Regular',
+} as const;
+
+/**
+ * RN's `TextStyle['fontVariant']` wants a mutable array of its literal
+ * union, not a readonly tuple — `as const` on the literal produces the
+ * latter, so this is typed and reused instead of repeating the cast.
+ */
+const TABULAR_NUMS: TextStyle['fontVariant'] = ['tabular-nums'];
+
+/**
+ * Same export keys as before the redesign so call sites don't churn — only
+ * the family/size/weight underneath changed. `tabular-nums` on the numeric
+ * styles is the honest replacement for the retired IBM Plex Mono: columns of
+ * figures still line up and digits don't shift width, without a lab/terminal
+ * monospace voice.
+ */
+export const typography = {
+  display: { fontFamily: fonts.displayBold, fontSize: 30, letterSpacing: -0.6, lineHeight: 36 },
+  title: { fontFamily: fonts.bold, fontSize: 22, letterSpacing: -0.4, lineHeight: 28 },
+  heading: { fontFamily: fonts.semibold, fontSize: 17, letterSpacing: -0.2, lineHeight: 22 },
+  body: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 23 },
+  bodyStrong: { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 23 },
+  small: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19 },
+  caption: { fontFamily: fonts.semibold, fontSize: 12, letterSpacing: 0.4, lineHeight: 15, textTransform: 'uppercase' as const },
+  metric: {
+    fontFamily: fonts.bold,
+    fontSize: 44,
+    letterSpacing: -1.5,
+    lineHeight: 48,
+    fontVariant: TABULAR_NUMS,
+  },
+  data: { fontFamily: fonts.medium, fontSize: 15, fontVariant: TABULAR_NUMS },
+  dataSmall: { fontFamily: fonts.medium, fontSize: 12.5, fontVariant: TABULAR_NUMS },
+} as const;
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+  xxxl: 40,
+} as const;
+
+/** PULSE radius bands (brief 14–28, §3.3). Circular controls use `pill`;
+ *  don't turn every control into one — pills are for toggles/segmented state
+ *  and round check marks only. */
+export const radius = {
+  xs: 8,
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 26,
+  pill: 999,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Elevation — surface + shadow per tier, per theme (§3.2).
+//
+// In light mode depth reads through a diffuse drop shadow; in dark mode
+// shadows barely register, so depth comes mainly from the tone step
+// (background → surface → surfaceElevated) with shadow only a faint
+// reinforcement. `Elevation` keeps its old 0–3 numeric shape so `Section`'s
+// `tone` prop doesn't churn — 0 is bare background (no shadow), 1/2/3 map to
+// the card/raised/hero tiers below.
+// ---------------------------------------------------------------------------
+
+export type Elevation = 0 | 1 | 2 | 3;
+export type ElevationTier = 'card' | 'raised' | 'hero';
+
+const TIER_BY_ELEVATION: Record<Elevation, ElevationTier | null> = { 0: null, 1: 'card', 2: 'raised', 3: 'hero' };
+
+function rnShadow(offsetY: number, blurRadius: number, color: string): ViewStyle {
+  return {
+    shadowColor: color,
+    shadowOffset: { width: 0, height: offsetY },
+    shadowOpacity: 1,
+    shadowRadius: blurRadius / 2,
+    elevation: Math.max(1, Math.round(offsetY)),
+  };
+}
+
+/** Shadow (+ dark-mode hairline highlight) for one elevation tier — no
+ *  `backgroundColor`, so a component can layer it over its own fill (e.g.
+ *  `Button`'s `primary` variant, which needs the card shadow but not the
+ *  card's surface colour). */
+export function elevationShadow(mode: ThemeMode, tier: Elevation): ViewStyle {
+  const kind = TIER_BY_ELEVATION[tier];
+  if (!kind) return {};
+  if (mode === 'light') {
+    switch (kind) {
+      case 'card':
+        return rnShadow(2, 8, 'rgba(21,26,34,0.06)');
+      case 'raised':
+        return rnShadow(6, 18, 'rgba(21,26,34,0.08)');
+      case 'hero':
+        return rnShadow(10, 28, 'rgba(90,84,209,0.14)');
+    }
+  }
+  // Dark: shadows barely register, so this is a faint reinforcement only —
+  // depth comes mainly from the tone step applied by `surfaceStyle` below.
+  const base = rnShadow(2, 8, 'rgba(0,0,0,0.35)');
+  if (kind === 'card') return base;
+  return { ...base, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)' };
+}
+
+/** Background + shadow style for one elevation tier, resolved for `mode`. */
+export function surfaceStyle(color: ColorTokens, mode: ThemeMode, tier: Elevation): ViewStyle {
+  const kind = TIER_BY_ELEVATION[tier];
+  if (!kind) return { backgroundColor: color.background };
+  const bg = kind === 'card' ? color.surface : color.surfaceElevated;
+  return { backgroundColor: bg, ...elevationShadow(mode, tier) };
+}
+
+// ---------------------------------------------------------------------------
+// ThemeProvider / useTheme — reads the persisted `settings.theme` preference
+// (`'system' | 'light' | 'dark'`) plus the OS scheme for `'system'`, and
+// exposes the resolved tokens. Components consume colour via this hook
+// instead of importing a static palette; `spacing`/`radius`/`typography`/
+// `fonts` above stay plain imports since they don't vary by theme.
+// ---------------------------------------------------------------------------
+
+export interface Theme {
+  mode: ThemeMode;
+  color: ColorTokens;
+  tone: (tone: SeverityTone) => { fg: string; bg: string; softText: string };
+  evidence: (tier: 'A' | 'B' | 'C' | 'D') => string;
+  surface: (tier: Elevation) => ViewStyle;
+  shadow: (tier: Elevation) => ViewStyle;
+}
+
+function resolveMode(preference: ThemePreference, systemScheme: string | null | undefined): ThemeMode {
+  if (preference === 'light' || preference === 'dark') return preference;
+  return systemScheme === 'dark' ? 'dark' : 'light';
+}
+
+const ThemeModeContext = createContext<ThemeMode>('light');
+
+/**
+ * Wraps the app once, near the root. Not per-screen — every screen reads the
+ * same resolved mode via `useTheme()`.
+ */
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const preference = useAppStore((s) => s.settings.theme);
+  const systemScheme = useColorScheme();
+  const mode = resolveMode(preference, systemScheme);
+  return createElement(ThemeModeContext.Provider, { value: mode }, children);
+}
+
+export function useTheme(): Theme {
+  const mode = useContext(ThemeModeContext);
+  const color = COLOR_TOKENS[mode];
+  return useMemo(
+    () => ({
+      mode,
+      color,
+      tone: (tone: SeverityTone) => toneColors(color, tone),
+      evidence: (tier: 'A' | 'B' | 'C' | 'D') => evidenceColor(color, tier),
+      surface: (tier: Elevation) => surfaceStyle(color, mode, tier),
+      shadow: (tier: Elevation) => elevationShadow(mode, tier),
+    }),
+    [mode, color],
+  );
+}
+
+/** Resolved mode without the rest of the theme object — for call sites that
+ *  only need e.g. `StatusBar style` or an image variant. */
+export function useThemeMode(): ThemeMode {
+  return useContext(ThemeModeContext);
+}

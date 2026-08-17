@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { Caption, Data, Row } from './components';
-import { colors, radius, spacing } from './theme';
+import { radius, spacing, useTheme } from './theme';
 
 /**
  * A dose plotted inside its published range.
@@ -39,6 +39,9 @@ export function RangeBar({
   unit: string;
   basis?: string;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
+
   // Pad the scale beyond the published bounds so an out-of-range dose still has
   // somewhere to render, and so the end caps do not touch the edges.
   const span = high - low || high || 1;
@@ -51,7 +54,8 @@ export function RangeBar({
   const below = value < low;
   const above = value > high;
   const outside = below || above;
-  const tone = outside ? colors.critical : colors.accent;
+  const { fg: criticalFg, bg: criticalBg } = theme.tone('critical');
+  const tone = outside ? criticalFg : color.primary;
 
   const trackLeft = clamp(pct(low));
   const trackRight = clamp(pct(high));
@@ -69,10 +73,10 @@ export function RangeBar({
             position: 'absolute',
             left: `${valueLeft}%`,
             transform: [{ translateX: -26 }],
-            backgroundColor: outside ? colors.criticalDim : colors.surfaceHigh,
+            backgroundColor: outside ? criticalBg : color.surfaceMuted,
             borderWidth: 1,
             borderColor: tone,
-            borderRadius: radius.sm,
+            borderRadius: radius.xs,
             paddingHorizontal: spacing.sm,
             paddingVertical: 2,
             minWidth: 52,
@@ -87,7 +91,7 @@ export function RangeBar({
 
       <View style={{ height: 14, justifyContent: 'center', marginTop: 4 }}>
         {/* Padded scale — the faint rule the published interval sits on. */}
-        <View style={{ position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: colors.border }} />
+        <View style={{ position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: color.border }} />
 
         {/* The published interval itself. */}
         <View
@@ -97,9 +101,9 @@ export function RangeBar({
             width: `${Math.max(1, trackRight - trackLeft)}%`,
             height: 14,
             borderRadius: 7,
-            backgroundColor: colors.surfaceHigh,
+            backgroundColor: color.surfaceMuted,
             borderWidth: 1,
-            borderColor: colors.borderBright,
+            borderColor: color.borderStrong,
           }}
         />
 
@@ -110,7 +114,7 @@ export function RangeBar({
             left: `${typicalLeft}%`,
             width: 1,
             height: 14,
-            backgroundColor: colors.textFaint,
+            backgroundColor: color.textTertiary,
           }}
         />
 
@@ -129,21 +133,19 @@ export function RangeBar({
       </View>
 
       <Row justify="space-between" style={{ marginTop: spacing.sm }}>
-        <Data color={colors.textMuted} small>
+        <Data color={color.textSecondary} small>
           {format(low)} {unit}
         </Data>
-        <Caption color={colors.textFaint}>published range</Caption>
-        <Data color={colors.textMuted} small>
+        <Caption color={color.textTertiary}>published range</Caption>
+        <Data color={color.textSecondary} small>
           {format(high)} {unit}
         </Data>
       </Row>
 
-      {basis ? (
-        <Caption color={colors.textFaint}>{basis}</Caption>
-      ) : null}
+      {basis ? <Caption color={color.textTertiary}>{basis}</Caption> : null}
 
       {outside ? (
-        <Data color={colors.critical} small style={{ marginTop: spacing.sm }}>
+        <Data color={criticalFg} small style={{ marginTop: spacing.sm }}>
           {below ? 'Below the published range' : 'Above the published range'}
         </Data>
       ) : null}

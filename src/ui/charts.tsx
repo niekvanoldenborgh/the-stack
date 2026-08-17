@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { Caption, Data, Row, Small } from './components';
-import { colors, radius, spacing } from './theme';
+import { radius, spacing, useTheme } from './theme';
 
 /**
  * Charts, drawn with plain Views.
@@ -20,6 +20,11 @@ import { colors, radius, spacing } from './theme';
  *  - Axes and grid are recessive; the data is the only thing with chroma.
  *  - Every mark carries an accessibilityLabel with its own figure, which is the
  *    mobile equivalent of the table view a chart owes a screen-reader user.
+ *
+ * Single-hue small-multiples only (design spec §1.5/§2.3) — `tint` defaults
+ * to the theme's `chartInk`, tracks/rails to `chartTrack`. Do not introduce
+ * a categorical series palette here without a CVD validation pass first
+ * (AGENTS.md).
  */
 
 const BAR_GAP = 2;
@@ -53,8 +58,8 @@ export interface BarDatum {
 export function VBars({
   data,
   height = 116,
-  tint = colors.accent,
-  secondaryTint = colors.borderBright,
+  tint,
+  secondaryTint,
   formatValue = (v) => `${v}`,
   showPeakLabel = true,
   threshold,
@@ -71,6 +76,11 @@ export function VBars({
   /** Labelled inline at the right end of the rule — no legend, no axis. */
   thresholdLabel?: string;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const resolvedTint = tint ?? color.chartInk;
+  const resolvedSecondaryTint = secondaryTint ?? color.borderStrong;
+
   // Tracks and thresholds participate in the scale; otherwise a bar could sit
   // above its own denominator, or a threshold could fall off the top.
   const max = Math.max(
@@ -98,15 +108,15 @@ export function VBars({
               height: 1,
               borderBottomWidth: 1,
               borderStyle: 'dashed',
-              borderColor: colors.borderBright,
+              borderColor: color.borderStrong,
               zIndex: 2,
               alignItems: 'flex-end',
             }}
           >
             {/* Labelled on the rule itself, so the reference needs no legend. */}
             {thresholdLabel ? (
-              <View style={{ marginTop: -14, backgroundColor: colors.surface, paddingHorizontal: 4 }}>
-                <Caption color={colors.textFaint}>{thresholdLabel}</Caption>
+              <View style={{ marginTop: -14, backgroundColor: color.surface, paddingHorizontal: 4 }}>
+                <Caption color={color.textTertiary}>{thresholdLabel}</Caption>
               </View>
             ) : null}
           </View>
@@ -137,7 +147,7 @@ export function VBars({
                     right: 0,
                     bottom: 0,
                     height: trackHeight,
-                    backgroundColor: colors.surfaceHigh,
+                    backgroundColor: color.chartTrack,
                     borderTopLeftRadius: 4,
                     borderTopRightRadius: 4,
                   }}
@@ -145,7 +155,7 @@ export function VBars({
               ) : null}
 
               {leads && showPeakLabel ? (
-                <Data color={colors.textMuted} small style={{ textAlign: 'center', marginBottom: spacing.xs }}>
+                <Data color={color.chartPeakLabel} small style={{ textAlign: 'center', marginBottom: spacing.xs }}>
                   {formatValue(total)}
                 </Data>
               ) : null}
@@ -154,7 +164,7 @@ export function VBars({
                 <View
                   style={{
                     height: secondaryHeight,
-                    backgroundColor: secondaryTint,
+                    backgroundColor: resolvedSecondaryTint,
                     borderTopLeftRadius: 4,
                     borderTopRightRadius: 4,
                     // Surface gap keeps stacked segments legible without a stroke.
@@ -166,7 +176,7 @@ export function VBars({
               <View
                 style={{
                   height: total > 0 ? primaryHeight : ZERO_STUB,
-                  backgroundColor: total > 0 ? tint : colors.border,
+                  backgroundColor: total > 0 ? resolvedTint : color.border,
                   borderTopLeftRadius: secondaryHeight > 0 ? 0 : 4,
                   borderTopRightRadius: secondaryHeight > 0 ? 0 : 4,
                   // Recessive rather than transparent: opacity alone on ink
@@ -181,11 +191,11 @@ export function VBars({
       </View>
 
       {/* Recessive baseline. */}
-      <View style={{ height: 1, backgroundColor: colors.border, marginTop: 0 }} />
+      <View style={{ height: 1, backgroundColor: color.border, marginTop: 0 }} />
 
       <Row justify="space-between" style={{ marginTop: spacing.sm }}>
-        <Caption color={colors.textFaint}>{data[0]?.label ?? ''}</Caption>
-        <Caption color={colors.textFaint}>{data[data.length - 1]?.label ?? ''}</Caption>
+        <Caption color={color.textTertiary}>{data[0]?.label ?? ''}</Caption>
+        <Caption color={color.textTertiary}>{data[data.length - 1]?.label ?? ''}</Caption>
       </Row>
     </View>
   );
@@ -197,7 +207,7 @@ export function VBars({
  */
 export function HBars({
   data,
-  tint = colors.accent,
+  tint,
   formatValue = (v) => `${v}`,
   threshold,
   thresholdLabel,
@@ -209,13 +219,16 @@ export function HBars({
   threshold?: number;
   thresholdLabel?: string;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const resolvedTint = tint ?? color.chartInk;
   const max = Math.max(...data.map((d) => Math.max(d.value, d.track ?? 0)), threshold ?? 0, 1);
 
   return (
     <View>
       {thresholdLabel && threshold !== undefined ? (
         <Row justify="flex-end" style={{ marginBottom: spacing.sm }}>
-          <Caption color={colors.textFaint}>{thresholdLabel}</Caption>
+          <Caption color={color.textTertiary}>{thresholdLabel}</Caption>
         </Row>
       ) : null}
       {data.map((datum, index) => (
@@ -227,11 +240,11 @@ export function HBars({
         >
           <Row justify="space-between" style={{ marginBottom: spacing.xs }}>
             <Small muted={false}>{datum.label}</Small>
-            <Data color={colors.textMuted} small>
+            <Data color={color.textSecondary} small>
               {formatValue(datum.value)}
             </Data>
           </Row>
-          <View style={{ height: 8, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm }}>
+          <View style={{ height: 8, backgroundColor: color.surfaceSunken, borderRadius: radius.sm }}>
             {/* Denominator rail, where this measure has one. */}
             {datum.track ? (
               <View
@@ -239,7 +252,7 @@ export function HBars({
                   position: 'absolute',
                   width: `${(datum.track / max) * 100}%`,
                   height: 8,
-                  backgroundColor: colors.surfaceHigh,
+                  backgroundColor: color.chartTrack,
                   borderRadius: radius.sm,
                 }}
               />
@@ -248,7 +261,7 @@ export function HBars({
               style={{
                 width: `${Math.max((datum.value / max) * 100, 1.5)}%`,
                 height: 8,
-                backgroundColor: tint,
+                backgroundColor: resolvedTint,
                 borderRadius: radius.sm,
                 opacity: index === 0 ? 1 : 0.66,
               }}
@@ -264,7 +277,7 @@ export function HBars({
                   width: 1,
                   borderLeftWidth: 1,
                   borderStyle: 'dashed',
-                  borderColor: colors.borderBright,
+                  borderColor: color.borderStrong,
                 }}
               />
             ) : null}
@@ -285,7 +298,7 @@ export function HBars({
 export function Sparkbars({
   values,
   height = 34,
-  tint = colors.accent,
+  tint,
   accessibilityLabel,
 }: {
   values: number[];
@@ -293,6 +306,8 @@ export function Sparkbars({
   tint?: string;
   accessibilityLabel?: string;
 }) {
+  const theme = useTheme();
+  const resolvedTint = tint ?? theme.color.chartInk;
   if (values.length === 0) return null;
   const max = Math.max(...values, 1);
   const min = Math.min(...values);
@@ -313,7 +328,7 @@ export function Sparkbars({
             flex: 1,
             marginHorizontal: BAR_GAP / 2,
             height: Math.max(((value - floor) / (max - floor || 1)) * height, 3),
-            backgroundColor: tint,
+            backgroundColor: resolvedTint,
             borderTopLeftRadius: 3,
             borderTopRightRadius: 3,
             opacity: index === values.length - 1 ? 1 : 0.5,
@@ -345,7 +360,7 @@ export interface LevelCurvePoint {
 export function LevelCurve({
   points,
   height = 120,
-  tint = colors.accent,
+  tint,
   formatValue = (v) => `${Math.round(v)}%`,
   accessibilityLabel,
 }: {
@@ -355,6 +370,8 @@ export function LevelCurve({
   formatValue?: (value: number) => string;
   accessibilityLabel?: string;
 }) {
+  const theme = useTheme();
+  const resolvedTint = tint ?? theme.color.chartInk;
   if (points.length === 0) return null;
   const max = Math.max(...points.map((p) => p.high), 1);
 
@@ -381,7 +398,7 @@ export function LevelCurve({
                 right: 0,
                 bottom: bandBottom,
                 height: Math.max(bandTop - bandBottom, 1),
-                backgroundColor: tint,
+                backgroundColor: resolvedTint,
                 opacity: 0.16,
               }}
             />
@@ -394,7 +411,7 @@ export function LevelCurve({
                 right: 0,
                 bottom: Math.max(lineBottom - 1, 0),
                 height: 2,
-                backgroundColor: tint,
+                backgroundColor: resolvedTint,
                 opacity: 0.9,
               }}
             />

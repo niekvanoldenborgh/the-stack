@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { InjectionSite } from '../domain/types';
-import { colors, fonts, radius, spacing } from './theme';
+import { fonts, radius, spacing, useTheme } from './theme';
 
 /**
  * Human-readable names for each injection site, from the user's own point of
@@ -55,11 +55,13 @@ export function BodyFigure({
   value: InjectionSite | null;
   onChange: (site: InjectionSite) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <View style={styles.frame}>
       {/* Head + torso silhouette, purely decorative. */}
-      <View style={styles.head} />
-      <View style={styles.torso} />
+      <View style={[styles.head, { backgroundColor: color.surface, borderColor: color.border }]} />
+      <View style={[styles.torso, { backgroundColor: color.surface, borderColor: color.border }]} />
 
       {ZONES.map((zone) => {
         const active = zone.site === value;
@@ -75,13 +77,15 @@ export function BodyFigure({
               styles.zone,
               { left, right, top, width, height },
               {
-                backgroundColor: active ? colors.accentDim : colors.surfaceHigh,
-                borderColor: active ? colors.accent : colors.borderBright,
+                backgroundColor: active ? theme.tone('accent').bg : color.surfaceMuted,
+                borderColor: active ? color.primary : color.borderStrong,
                 opacity: pressed ? 0.75 : 1,
               },
             ]}
           >
-            <Text style={[styles.zoneLabel, { color: active ? colors.accent : colors.textMuted }]}>{zone.label}</Text>
+            <Text style={[styles.zoneLabel, { color: active ? color.primary : color.textSecondary }]}>
+              {zone.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -103,9 +107,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
   torso: {
     position: 'absolute',
@@ -114,9 +116,7 @@ const styles = StyleSheet.create({
     width: 108,
     height: 280,
     borderRadius: radius.lg,
-    backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
   zone: {
     position: 'absolute',
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   zoneLabel: {
-    fontFamily: fonts.sansMedium,
+    fontFamily: fonts.semibold,
     fontSize: 11,
     lineHeight: 14,
     textAlign: 'center',

@@ -1,8 +1,8 @@
-import { IBMPlexMono_500Medium } from '@expo-google-fonts/ibm-plex-mono/500Medium';
-import { IBMPlexMono_600SemiBold } from '@expo-google-fonts/ibm-plex-mono/600SemiBold';
 import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
+import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
 import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
+import { Inter_800ExtraBold } from '@expo-google-fonts/inter/800ExtraBold';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -12,7 +12,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { configureNotificationHandler, ensureAndroidChannel } from '../src/lib/notifications';
-import { colors, typography } from '../src/ui/theme';
+import { ThemeProvider, typography, useTheme, useThemeMode } from '../src/ui/theme';
 
 // Must run at module scope, before the first render, and must not be awaited.
 // The .catch only silences the unhandled-rejection warning.
@@ -22,14 +22,14 @@ export default function RootLayout() {
   // Deliberately deep-imported per weight. Each package's barrel entry eagerly
   // requires every face it ships, and Metro does not tree-shake them.
   // The map keys become the fontFamily strings used in src/ui/theme.ts.
+  // IBM Plex Mono is retired (PULSE — THEA-69): quantities now use Inter with
+  // `tabular-nums` instead of a lab-notebook monospace voice.
   const [fontsLoaded, fontError] = useFonts({
-    // Display voice and reading text — one family, three weights.
+    Inter_800ExtraBold,
     Inter_700Bold,
     Inter_600SemiBold,
+    Inter_500Medium,
     Inter_400Regular,
-    // Every quantity, unit and label.
-    IBMPlexMono_500Medium,
-    IBMPlexMono_600SemiBold,
   });
 
   useEffect(() => {
@@ -43,23 +43,39 @@ export default function RootLayout() {
     if (fontsLoaded || fontError) void SplashScreen.hideAsync();
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <RootNavigator fontsReady={fontsLoaded || Boolean(fontError)} />
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+/** Split out from `RootLayout` so it can call `useTheme()` — which reads the
+ *  store via `ThemeProvider` — without the provider being an ancestor of
+ *  itself. */
+function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
+  const theme = useTheme();
+  const mode = useThemeMode();
+
+  if (!fontsReady) {
     // On native this is never seen; the native splash is still up. On web
-    // expo-splash-screen is a no-op, so paint the app background rather than
-    // returning null, which would flash white on a dark-themed app.
-    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+    // expo-splash-screen is a no-op, so paint the theme background rather
+    // than returning null, which would flash the wrong colour.
+    return <View style={{ flex: 1, backgroundColor: theme.color.background }} />;
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
+    <>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.bg },
-          headerTintColor: colors.text,
+          headerStyle: { backgroundColor: theme.color.background },
+          headerTintColor: theme.color.textPrimary,
           headerTitleStyle: typography.heading,
           headerShadowVisible: false,
-          contentStyle: { backgroundColor: colors.bg },
+          contentStyle: { backgroundColor: theme.color.background },
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -72,6 +88,6 @@ export default function RootLayout() {
         <Stack.Screen name="analytics" options={{ title: 'Analytics' }} />
         <Stack.Screen name="session/[id]" options={{ title: 'Log session' }} />
       </Stack>
-    </SafeAreaProvider>
+    </>
   );
 }

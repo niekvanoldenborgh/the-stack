@@ -1,7 +1,7 @@
 import { CircleAlert, Droplet, Info, OctagonAlert, Pill, SprayCan, Syringe, TriangleAlert } from 'lucide-react-native';
 
 import type { Route } from '../domain/types';
-import { colors } from './theme';
+import { useTheme } from './theme';
 
 /**
  * All iconography in this app comes from Lucide (ISC) — one single-weight
@@ -27,17 +27,10 @@ const ROUTE_ICONS: Record<Route, { Icon: typeof Syringe; label: string }> = {
   nasal: { Icon: SprayCan, label: 'Nasal spray' },
 };
 
-export function RouteIcon({
-  route,
-  size = 16,
-  color = colors.textMuted,
-}: {
-  route: Route;
-  size?: number;
-  color?: string;
-}) {
+export function RouteIcon({ route, size = 16, color }: { route: Route; size?: number; color?: string }) {
+  const theme = useTheme();
   const { Icon, label } = ROUTE_ICONS[route];
-  return <Icon size={size} color={color} accessibilityLabel={label} />;
+  return <Icon size={size} color={color ?? theme.color.textSecondary} accessibilityLabel={label} />;
 }
 
 export function routeLabel(route: Route): string {
@@ -52,11 +45,11 @@ export function routeLabel(route: Route): string {
  * distinct shape (a stop-sign octagon) since that is the one blocking finding
  * a user must not misread.
  */
-const SEVERITY_ICONS = {
-  critical: { Icon: OctagonAlert, color: colors.critical },
-  high: { Icon: TriangleAlert, color: colors.high },
-  moderate: { Icon: CircleAlert, color: colors.moderate },
-  info: { Icon: Info, color: colors.info },
+const SEVERITY_SHAPES = {
+  critical: OctagonAlert,
+  high: TriangleAlert,
+  moderate: CircleAlert,
+  info: Info,
 } as const;
 
 export function SeverityIcon({
@@ -66,6 +59,7 @@ export function SeverityIcon({
   severity: 'critical' | 'high' | 'moderate' | 'info';
   size?: number;
 }) {
-  const { Icon, color } = SEVERITY_ICONS[severity];
-  return <Icon size={size} color={color} />;
+  const theme = useTheme();
+  const Icon = SEVERITY_SHAPES[severity];
+  return <Icon size={size} color={theme.tone(severity).fg} />;
 }
