@@ -22,10 +22,12 @@ import {
   TextField,
 } from '../src/ui/components';
 import { SafetyReportView } from '../src/ui/SafetyReport';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, fonts, evidenceColor, radius, spacing } from '../src/ui/theme';
+import { EVIDENCE_LABELS, LEGAL_LABELS, fonts, radius, spacing, useTheme } from '../src/ui/theme';
 
 export default function BuilderScreen() {
   const router = useRouter();
+  const theme = useTheme();
+  const { color } = theme;
   const profile = useAppStore((s) => s.profile);
   const createCustomStack = useAppStore((s) => s.createCustomStack);
 
@@ -109,7 +111,7 @@ export default function BuilderScreen() {
         </View>
       ) : null}
 
-      <Caption color={colors.textMuted} style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
+      <Caption color={color.textSecondary} style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
         Choose compounds
       </Caption>
       <TextField
@@ -128,14 +130,14 @@ export default function BuilderScreen() {
           <Pressable key={peptide.id} onPress={() => toggle(peptide.id)} accessibilityRole="button" accessibilityState={{ selected: isSelected }}>
             <Card
               style={{
-                borderColor: isSelected ? colors.accent : colors.border,
-                backgroundColor: isSelected ? `${colors.accent}0F` : colors.surface,
+                borderColor: isSelected ? color.primary : color.border,
+                backgroundColor: isSelected ? `${color.primary}0F` : color.surface,
               }}
             >
               <Row justify="space-between" align="flex-start">
                 <View style={{ flex: 1 }}>
                   <Row gap={spacing.sm}>
-                    <Body style={{ fontFamily: fonts.sansMedium }}>{peptide.name}</Body>
+                    <Body style={{ fontFamily: fonts.semibold }}>{peptide.name}</Body>
                     {isSelected ? <Badge label="Added" tone="accent" solid /> : null}
                   </Row>
                   <Small style={{ marginTop: 2 }}>{peptide.summary}</Small>
@@ -152,8 +154,8 @@ export default function BuilderScreen() {
                         : 'accent'
                   }
                 />
-                <View style={[styles.evidenceTag, { borderColor: evidenceColor(peptide.evidence) }]}>
-                  <Caption color={evidenceColor(peptide.evidence)}>
+                <View style={[styles.evidenceTag, { borderColor: theme.evidence(peptide.evidence) }]}>
+                  <Caption color={theme.evidence(peptide.evidence)}>
                     {peptide.evidence} · {EVIDENCE_LABELS[peptide.evidence]}
                   </Caption>
                 </View>

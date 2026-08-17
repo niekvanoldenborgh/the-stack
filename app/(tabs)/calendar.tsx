@@ -33,7 +33,7 @@ import {
 import { Section } from '../../src/ui/primitives';
 import { MetaChip, TimelineRow, WeekStrip } from '../../src/ui/schedule';
 import type { DayMarker } from '../../src/ui/schedule';
-import { colors, radius, spacing, type SeverityTone } from '../../src/ui/theme';
+import { radius, spacing, useTheme, type SeverityTone } from '../../src/ui/theme';
 
 /**
  * Calendar (page 4), redesigned THEA-40.
@@ -67,14 +67,16 @@ import { colors, radius, spacing, type SeverityTone } from '../../src/ui/theme';
 
 /**
  * Phase colours are chosen to read as loading → on → off without borrowing the
- * severity scale: sky for the ramp, the brand lime for full strength, a muted
- * ink for the washout. Each segment also carries a label, so the meaning never
- * rests on colour alone.
+ * severity scale: info for the ramp, the brand accent for full strength, a
+ * muted ink for the washout. Each segment also carries a label, so the
+ * meaning never rests on colour alone. `tone` is resolved to an actual colour
+ * via `theme.tone(...)` at render time (washout has no tone — it falls back
+ * to `textTertiary`), since tone resolution now depends on the live theme.
  */
-const PHASE_META: Record<PhaseKind, { label: string; color: string; tone?: SeverityTone }> = {
-  titration: { label: 'Loading', color: colors.info, tone: 'info' },
-  on: { label: 'Fully on', color: colors.accent, tone: 'accent' },
-  washout: { label: 'Rotating off', color: colors.textFaint },
+const PHASE_META: Record<PhaseKind, { label: string; tone?: SeverityTone }> = {
+  titration: { label: 'Loading', tone: 'info' },
+  on: { label: 'Fully on', tone: 'accent' },
+  washout: { label: 'Rotating off' },
 };
 
 const SEVERITY_BAND_TONE: Record<'mild' | 'moderate' | 'severe', SeverityTone> = {
@@ -125,6 +127,7 @@ function classifyDose(dose: ScheduledDose, logged: 'taken' | 'skipped' | undefin
 }
 
 export default function CalendarScreen() {
+  const { color } = useTheme();
   const stack = useActiveStack();
   const doseLogs = useAppStore((s) => s.doseLogs);
   const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
@@ -229,7 +232,7 @@ export default function CalendarScreen() {
 
   return (
     <Screen>
-      <Caption color={colors.accent}>Schedule</Caption>
+      <Caption color={color.primary}>Schedule</Caption>
       <Display style={{ marginTop: spacing.sm }}>Calendar</Display>
       <Body muted style={{ marginTop: spacing.xs }}>
         {stack.name}
@@ -322,6 +325,13 @@ export default function CalendarScreen() {
 // ---------------------------------------------------------------------------
 
 function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<typeof buildCyclePhases> }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const phaseColor = (kind: PhaseKind) => {
+    const tone = PHASE_META[kind].tone;
+    return tone ? theme.tone(tone).fg : color.textTertiary;
+  };
+
   return (
     <View>
       <Body style={{ marginBottom: spacing.sm }}>{name}</Body>
@@ -329,7 +339,6 @@ function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<type
       {/* Proportional bar: segment width follows phase length in days. */}
       <Row gap={2} style={{ height: 10 }}>
         {phases.map((phase, index) => {
-          const meta = PHASE_META[phase.kind];
           const days = Math.max(1, diffDays(phase.startDate, phase.endDate) + 1);
           return (
             <View
@@ -338,7 +347,7 @@ function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<type
                 flexGrow: days,
                 flexBasis: 0,
                 borderRadius: radius.sm,
-                backgroundColor: meta.color,
+                backgroundColor: phaseColor(phase.kind),
                 opacity: phase.kind === 'washout' ? 0.5 : 1,
               }}
             />
@@ -356,11 +365,11 @@ function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<type
                   width: 9,
                   height: 9,
                   borderRadius: 2,
-                  backgroundColor: meta.color,
+                  backgroundColor: phaseColor(phase.kind),
                   opacity: phase.kind === 'washout' ? 0.6 : 1,
                 }}
               />
-              <Data small color={colors.text} style={{ width: 92 }}>
+              <Data small color={color.textPrimary} style={{ width: 92 }}>
                 {meta.label}
               </Data>
               <Small style={{ flex: 1 }}>{formatRange(phase.startDate, phase.endDate)}</Small>
@@ -377,6 +386,7 @@ function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<type
 // ---------------------------------------------------------------------------
 
 function DoseTimelineRow({ event, first, last }: { event: DoseEvent; first: boolean; last: boolean }) {
+  const theme = useTheme();
   const peptide = getPeptide(event.dose.peptideId);
   const meta = DOSE_STATUS_META[event.status];
   return (
@@ -385,7 +395,7 @@ function DoseTimelineRow({ event, first, last }: { event: DoseEvent; first: bool
         <View style={{ flex: 1 }}>
           <Body>{peptide?.name ?? event.dose.peptideId}</Body>
           <Row gap={spacing.xs} align="center" style={{ marginTop: spacing.xs }}>
-            <Data small color={colors.textMuted}>
+            <Data small color={theme.color.textSecondary}>
               {formatDose(event.dose.dose)}
             </Data>
             <MetaChip
@@ -431,6 +441,7 @@ function FilterPill({
   active: boolean;
   onPress: () => void;
 }) {
+  const { color } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -445,13 +456,13 @@ function FilterPill({
         paddingVertical: spacing.sm,
         borderRadius: radius.pill,
         borderWidth: 1,
-        borderColor: active ? colors.accent : colors.border,
-        backgroundColor: active ? colors.accentDim : colors.surfaceHigh,
+        borderColor: active ? color.primary : color.border,
+        backgroundColor: active ? color.primarySoft : color.surfaceMuted,
         opacity: pressed ? 0.75 : 1,
       })}
     >
-      {icon ? <Ionicons name={icon} size={12} color={active ? colors.accent : colors.textFaint} /> : null}
-      <Small muted={false} style={{ color: active ? colors.accent : colors.textMuted }}>
+      {icon ? <Ionicons name={icon} size={12} color={active ? color.primary : color.textTertiary} /> : null}
+      <Small muted={false} style={{ color: active ? color.primary : color.textSecondary }}>
         {label}
       </Small>
     </Pressable>
@@ -467,6 +478,7 @@ function StepArrow({
   label: string;
   onPress: () => void;
 }) {
+  const { color } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -480,12 +492,12 @@ function StepArrow({
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surfaceHigh,
+        borderColor: color.border,
+        backgroundColor: color.surfaceMuted,
         opacity: pressed ? 0.7 : 1,
       })}
     >
-      <Ionicons name={icon} size={16} color={colors.textMuted} />
+      <Ionicons name={icon} size={16} color={color.textSecondary} />
     </Pressable>
   );
 }

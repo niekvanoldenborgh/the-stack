@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 
 import { useAppStore } from '../../src/store/useAppStore';
 import { Body, Callout, Card, Caption, Row, Screen, SectionTitle, Small, Spacer } from '../../src/ui/components';
-import { colors, radius, spacing } from '../../src/ui/theme';
+import { radius, spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Injection-alarm timing.
@@ -33,6 +33,8 @@ function offsetLabel(min: number): string {
 }
 
 export default function AlarmScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const offsets = useAppStore((s) => s.settings.alarmOffsetsMin);
   const remindersEnabled = useAppStore((s) => s.settings.remindersEnabled);
   const setSetting = useAppStore((s) => s.setSetting);
@@ -69,10 +71,10 @@ export default function AlarmScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               gap: spacing.md,
-              backgroundColor: colors.surface,
+              backgroundColor: color.surface,
               borderRadius: radius.md,
               borderWidth: 1,
-              borderColor: active ? colors.accent : colors.border,
+              borderColor: active ? color.primary : color.border,
               padding: spacing.md,
               marginBottom: spacing.sm,
               opacity: pressed ? 0.8 : 1,
@@ -84,25 +86,25 @@ export default function AlarmScreen() {
                 height: 22,
                 borderRadius: 6,
                 borderWidth: 1.5,
-                borderColor: active ? colors.accent : colors.borderBright,
-                backgroundColor: active ? colors.accent : 'transparent',
+                borderColor: active ? color.primary : color.borderStrong,
+                backgroundColor: active ? color.primary : 'transparent',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              {active ? <Body style={{ color: colors.bg, fontSize: 13 }}>✓</Body> : null}
+              {active ? <Body style={{ color: color.onPrimary, fontSize: 13 }}>✓</Body> : null}
             </View>
-            <Body style={{ flex: 1, color: colors.text }}>{preset.label}</Body>
+            <Body style={{ flex: 1, color: color.textPrimary }}>{preset.label}</Body>
           </Pressable>
         );
       })}
 
       <Card style={{ marginTop: spacing.md }}>
-        <Caption color={colors.textMuted}>For a dose scheduled at 22:30 you will be alerted</Caption>
+        <Caption color={color.textSecondary}>For a dose scheduled at 22:30 you will be alerted</Caption>
         <Spacer size={spacing.sm} />
         {sortedActive.map((min) => (
           <Row key={min} justify="space-between" style={{ marginBottom: spacing.xs }}>
-            <Small muted={false} style={{ color: colors.text }}>
+            <Small muted={false} style={{ color: color.textPrimary }}>
               {offsetLabel(min)}
             </Small>
             <Small>

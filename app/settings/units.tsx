@@ -5,7 +5,7 @@ import type { LengthUnit, MassUnit } from '../../src/store/useAppStore';
 import { formatLength, formatMass } from '../../src/lib/units';
 import { Body, Callout, Card, Caption, Row, Screen, SectionTitle, Small, Spacer } from '../../src/ui/components';
 import { Segmented } from '../../src/ui/schedule';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Measurement units. Bodyweight and height only.
@@ -16,6 +16,7 @@ import { colors, spacing } from '../../src/ui/theme';
  * the profile keeps storing metric.
  */
 export default function UnitsScreen() {
+  const { color } = useTheme();
   const settings = useAppStore((s) => s.settings);
   const setSetting = useAppStore((s) => s.setSetting);
   const profile = useAppStore((s) => s.profile);
@@ -47,17 +48,17 @@ export default function UnitsScreen() {
 
       {profile ? (
         <Card style={{ marginTop: spacing.xl }}>
-          <Caption color={colors.textMuted}>Your profile, shown in these units</Caption>
+          <Caption color={color.textSecondary}>Your profile, shown in these units</Caption>
           <Spacer size={spacing.sm} />
           <Row justify="space-between">
             <Small>Weight</Small>
-            <Small muted={false} style={{ color: colors.text }}>
+            <Small muted={false} style={{ color: color.textPrimary }}>
               {formatMass(profile.weightKg, settings.massUnit)}
             </Small>
           </Row>
           <Row justify="space-between" style={{ marginTop: spacing.sm }}>
             <Small>Height</Small>
-            <Small muted={false} style={{ color: colors.text }}>
+            <Small muted={false} style={{ color: color.textPrimary }}>
               {formatLength(profile.heightCm, settings.lengthUnit)}
             </Small>
           </Row>

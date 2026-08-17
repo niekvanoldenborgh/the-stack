@@ -34,10 +34,12 @@ import { Reveal } from '../src/ui/motion';
 import { Disclosure, Section } from '../src/ui/primitives';
 import { RiskPicker } from '../src/ui/RiskPicker';
 import { SafetyReportView } from '../src/ui/SafetyReport';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, evidenceColor, radius, spacing } from '../src/ui/theme';
+import { EVIDENCE_LABELS, LEGAL_LABELS, radius, spacing, useTheme } from '../src/ui/theme';
 
 export default function RecommendationScreen() {
   const router = useRouter();
+  const theme = useTheme();
+  const { color } = theme;
   const profile = useAppStore((s) => s.profile);
   const updateProfile = useAppStore((s) => s.updateProfile);
   const saveStack = useAppStore((s) => s.saveStack);
@@ -92,7 +94,7 @@ export default function RecommendationScreen() {
       <Reveal index={0}>
         <Logo size={40} />
         <Spacer size={spacing.lg} />
-        <Caption color={colors.accent}>Built from your profile</Caption>
+        <Caption color={color.primary}>Built from your profile</Caption>
       </Reveal>
 
       <Reveal index={1}>
@@ -145,7 +147,7 @@ export default function RecommendationScreen() {
         }}
       />
 
-      <Caption color={colors.textMuted} style={{ marginBottom: spacing.md }}>
+      <Caption color={color.textSecondary} style={{ marginBottom: spacing.md }}>
         What we picked
       </Caption>
       {stack.items.length === 0 ? (
@@ -196,6 +198,7 @@ export default function RecommendationScreen() {
         label={stack.items.length === 0 ? 'Nothing to accept yet' : 'Start this stack'}
         onPress={accept}
         disabled={stack.items.length === 0}
+        gradient
       />
       <Spacer size={spacing.sm} />
       <Button label="Build my own instead" variant="secondary" onPress={() => router.replace('/builder')} />
@@ -205,6 +208,8 @@ export default function RecommendationScreen() {
 }
 
 function RecommendedCard({ item, onPress }: { item: StackItem; onPress: () => void }) {
+  const theme = useTheme();
+  const { color } = theme;
   const peptide = getPeptide(item.peptideId);
   if (!peptide) return null;
 
@@ -231,44 +236,44 @@ function RecommendedCard({ item, onPress }: { item: StackItem; onPress: () => vo
                   paddingVertical: 3,
                   borderRadius: radius.sm,
                   borderWidth: 1,
-                  borderColor: evidenceColor(peptide.evidence),
+                  borderColor: theme.evidence(peptide.evidence),
                 }}
               >
-                <Caption color={evidenceColor(peptide.evidence)}>
+                <Caption color={theme.evidence(peptide.evidence)}>
                   {peptide.evidence} · {EVIDENCE_LABELS[peptide.evidence]}
                 </Caption>
               </View>
             </Row>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Caption color={colors.textFaint}>Fit</Caption>
-            <Heading style={{ color: colors.accent }}>{item.score}</Heading>
+            <Caption color={color.textTertiary}>Fit</Caption>
+            <Heading style={{ color: color.primary }}>{item.score}</Heading>
           </View>
         </Row>
 
         <Divider />
 
         {item.doseWithheld ? (
-          <Small muted={false} style={{ color: colors.high }}>
+          <Small muted={false} style={{ color: theme.tone('high').fg }}>
             No dose shown for this compound — open it to see why.
           </Small>
         ) : (
           <Row justify="space-between" align="flex-end">
             <View>
-              <Caption color={colors.textMuted}>Dose</Caption>
+              <Caption color={color.textSecondary}>Dose</Caption>
               <Row gap={spacing.xs} align="flex-end" style={{ marginTop: spacing.xs }}>
-                <Metric color={colors.accent} style={{ fontSize: 32, lineHeight: 34 }}>
+                <Metric color={color.primary} style={{ fontSize: 32, lineHeight: 34 }}>
                   {formatDose(item.dose)}
                 </Metric>
                 {item.timesPerDay > 1 ? (
-                  <Data color={colors.textMuted} small style={{ marginBottom: 4 }}>
+                  <Data color={color.textSecondary} small style={{ marginBottom: 4 }}>
                     × {item.timesPerDay}/day
                   </Data>
                 ) : null}
               </Row>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Data color={colors.textMuted} small>
+              <Data color={color.textSecondary} small>
                 {item.daysPerWeek === 7 ? 'daily' : `${item.daysPerWeek}×/week`}
               </Data>
               <Small>{item.preferredTimes.map((t) => TIME_OF_DAY_LABELS[t]).join(', ')}</Small>

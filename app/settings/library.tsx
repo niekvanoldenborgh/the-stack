@@ -6,7 +6,7 @@ import { View } from 'react-native';
 import { PEPTIDES, searchPeptides } from '../../src/domain/peptides';
 import { Badge, Body, Caption, Row, Screen, Small, Spacer, TextField } from '../../src/ui/components';
 import { List, ListItem } from '../../src/ui/primitives';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, spacing } from '../../src/ui/theme';
+import { EVIDENCE_LABELS, LEGAL_LABELS, spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Compound library — every peptide the app knows about.
@@ -17,6 +17,8 @@ import { EVIDENCE_LABELS, LEGAL_LABELS, colors, spacing } from '../../src/ui/the
  * sourced detail lives in exactly one place.
  */
 export default function LibraryScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const router = useRouter();
   const [query, setQuery] = useState('');
 
@@ -36,7 +38,7 @@ export default function LibraryScreen() {
         placeholder="Search by name or alias"
         autoCorrect={false}
         autoCapitalize="none"
-        leading={<Ionicons name="search" size={18} color={colors.textFaint} />}
+        leading={<Ionicons name="search" size={18} color={color.textTertiary} />}
         style={{ marginTop: spacing.lg, marginBottom: spacing.md }}
       />
 
@@ -58,7 +60,7 @@ export default function LibraryScreen() {
                     label={`Ev ${peptide.evidence}`}
                     tone={peptide.evidence === 'A' ? 'accent' : peptide.evidence === 'D' ? 'critical' : 'moderate'}
                   />
-                  <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+                  <Ionicons name="chevron-forward" size={16} color={color.textTertiary} />
                 </View>
               }
             />
@@ -67,7 +69,7 @@ export default function LibraryScreen() {
       )}
 
       <Spacer size={spacing.md} />
-      <Caption color={colors.textMuted}>Evidence tiers</Caption>
+      <Caption color={color.textSecondary}>Evidence tiers</Caption>
       <Spacer size={spacing.sm} />
       {(['A', 'B', 'C', 'D'] as const).map((tier) => (
         <Row key={tier} justify="space-between" style={{ marginBottom: spacing.xs }}>

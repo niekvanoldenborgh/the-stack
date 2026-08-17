@@ -13,6 +13,7 @@ import { useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/u
 import {
   Badge,
   Button,
+  Callout,
   Caption,
   Data,
   Display,
@@ -25,7 +26,7 @@ import {
 } from '../../src/ui/components';
 import { RouteIcon } from '../../src/ui/icons';
 import { FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
-import { colors, spacing, type SeverityTone } from '../../src/ui/theme';
+import { spacing, useTheme, type SeverityTone } from '../../src/ui/theme';
 
 /**
  * Summary (page 1) — THEA-8, redesigned THEA-38, THEA-40, THEA-49.
@@ -54,6 +55,8 @@ import { colors, spacing, type SeverityTone } from '../../src/ui/theme';
 
 export default function SummaryScreen() {
   const router = useRouter();
+  const theme = useTheme();
+  const { color } = theme;
   const profile = useAppStore((s) => s.profile);
   const stack = useActiveStack();
   const doseLogs = useAppStore((s) => s.doseLogs);
@@ -80,7 +83,7 @@ export default function SummaryScreen() {
   return (
     <Screen>
       <Spacer size={spacing.lg} />
-      <Caption color={colors.accent}>Today</Caption>
+      <Caption color={color.primary}>Today</Caption>
       <Display style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>Summary</Display>
 
       <NextInjectionSection
@@ -143,13 +146,15 @@ function NextInjectionSection({
   remindersEnabled: boolean;
   onOpenAlarmSettings: () => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   const next = upcomingDoses.find((dose) => !doseLogs[dose.id]);
 
   if (!next) {
     return (
-      <Section tone={2}>
-        <Caption color={colors.accent}>Next injection</Caption>
-        <Small style={{ marginTop: spacing.sm }}>Nothing scheduled in the next two weeks.</Small>
+      <Section tone={1}>
+        <Caption color={color.primary}>Next injection</Caption>
+        <Small style={{ marginTop: spacing.sm }}>Nothing scheduled.</Small>
       </Section>
     );
   }
@@ -158,31 +163,36 @@ function NextInjectionSection({
   const sortedOffsets = [...alarmOffsetsMin].sort((a, b) => b - a);
 
   return (
-    <Section tone={2} gap={spacing.lg}>
+    <Section tone={3} gradient gap={spacing.lg}>
       <FocalMetric
         eyebrow={relativeLabel(next.date)}
         value={`${next.dose.value}`}
         unit={doseUnitLabel(next.dose.unit)}
         meta={`${peptide?.name ?? next.peptideId} · ${next.time}`}
+        tone={color.onPrimary}
+        metaTone={color.onPrimary}
       />
 
       {remindersEnabled ? (
         sortedOffsets.length > 0 ? (
-          <List>
+          <View style={{ gap: spacing.sm }}>
             {sortedOffsets.map((min) => (
-              <ListItem
-                key={min}
-                title={offsetLabel(min)}
-                meta={<Data small color={colors.textMuted}>{subtractMinutes(next.time, min)}</Data>}
-              />
+              <Row key={min} justify="space-between">
+                <Small muted={false} style={{ color: color.onPrimary }}>
+                  {offsetLabel(min)}
+                </Small>
+                <Data small color={color.onPrimary}>
+                  {subtractMinutes(next.time, min)}
+                </Data>
+              </Row>
             ))}
-          </List>
+          </View>
         ) : null
       ) : (
         <View>
-          <Small muted={false} style={{ color: colors.moderate }}>
+          <Callout tone="moderate">
             Reminders are off — you will not be alerted for this injection.
-          </Small>
+          </Callout>
           <Button label="Open alarm settings" variant="secondary" onPress={onOpenAlarmSettings} style={{ marginTop: spacing.md }} />
         </View>
       )}
@@ -195,6 +205,8 @@ function NextInjectionSection({
 // ---------------------------------------------------------------------------
 
 function GoalProgressSection({ target, measurements }: { target?: GoalTarget; measurements: Measurement[] }) {
+  const theme = useTheme();
+  const { color } = theme;
   const pct = useMemo(() => {
     if (!target) return null;
     const summary = summariseMeasurements(measurements).find((s) => s.key === target.metricId);
@@ -210,7 +222,7 @@ function GoalProgressSection({ target, measurements }: { target?: GoalTarget; me
   return (
     <Section title="Goal progress">
       <ProgressBar value={pct} tone="accent" />
-      <Caption color={colors.textFaint} style={{ marginTop: spacing.xs }}>
+      <Caption color={color.textTertiary} style={{ marginTop: spacing.xs }}>
         {`${Math.round(pct)}% of the way to your ${label} target · ${targetLabel}`}
       </Caption>
     </Section>
@@ -318,10 +330,11 @@ function cycleCaption(cycle: ReturnType<typeof summariseCycle>[number]): string 
  * people motivated to finish a cycle rather than drift off it partway.
  */
 function CycleProgress({ pct, caption }: { pct: number; caption: string }) {
+  const theme = useTheme();
   return (
     <View>
       <ProgressBar value={pct} tone="accent" />
-      <Caption color={colors.textFaint} style={{ marginTop: spacing.xs }}>
+      <Caption color={theme.color.textTertiary} style={{ marginTop: spacing.xs }}>
         {`${Math.round(pct)}% through this cycle · ${caption}`}
       </Caption>
     </View>

@@ -8,7 +8,7 @@ import { formatLength, formatMass } from '../../src/lib/units';
 import { cancelAllReminders } from '../../src/lib/notifications';
 import { Display, Screen, Small, Spacer } from '../../src/ui/components';
 import { List, ListItem, Section } from '../../src/ui/primitives';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Settings hub (THEA-4 page 5, design transform THEA-52). Each row opens its
@@ -33,10 +33,13 @@ import { colors, spacing } from '../../src/ui/theme';
  */
 
 function Chevron() {
-  return <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />;
+  const { color } = useTheme();
+  return <Ionicons name="chevron-forward" size={18} color={color.textTertiary} />;
 }
 
 export default function SettingsScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const router = useRouter();
   const profile = useAppStore((s) => s.profile);
   const settings = useAppStore((s) => s.settings);
@@ -157,12 +160,12 @@ export default function SettingsScreen() {
             title="Lock app"
             detail="Re-locks the safety disclaimer. Your data stays on this device."
             onPress={onLogOut}
-            meta={<Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />}
+            meta={<Ionicons name="lock-closed-outline" size={18} color={color.textSecondary} />}
           />
           <ListItem
             title="Delete account"
             tone="critical"
-            meta={<Ionicons name="trash-outline" size={18} color={colors.critical} />}
+            meta={<Ionicons name="trash-outline" size={18} color={theme.tone('critical').fg} />}
             onPress={() => router.push('/settings/delete-account')}
           />
         </List>

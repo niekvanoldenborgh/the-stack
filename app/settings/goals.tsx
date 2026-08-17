@@ -6,13 +6,15 @@ import { GOALS, GOAL_CONFLICTS, GOALS_BY_ID } from '../../src/domain/goals';
 import type { GoalId } from '../../src/domain/types';
 import { useAppStore } from '../../src/store/useAppStore';
 import { Body, Button, Callout, Card, Chip, Row, Screen, SectionTitle, Small, Spacer } from '../../src/ui/components';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Edit goals. The recommendation engine reads `profile.goals`; changing them
  * here re-runs the safety pass over saved stacks via `updateProfile`.
  */
 export default function GoalsScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const router = useRouter();
   const profile = useAppStore((s) => s.profile);
   const updateProfile = useAppStore((s) => s.updateProfile);
@@ -66,7 +68,7 @@ export default function GoalsScreen() {
               tone="moderate"
               title={`${GOALS_BY_ID[c.goals[0]]?.label} vs ${GOALS_BY_ID[c.goals[1]]?.label}`}
             >
-              <Small muted={false} style={{ color: colors.text }}>
+              <Small muted={false} style={{ color: color.textPrimary }}>
                 {c.detail}
                 {'\n\n'}
                 {c.guidance}
@@ -83,7 +85,7 @@ export default function GoalsScreen() {
             if (!goal) return null;
             return (
               <View key={id} style={{ marginBottom: spacing.md }}>
-                <Small muted={false} style={{ color: colors.text }}>
+                <Small muted={false} style={{ color: color.textPrimary }}>
                   {goal.icon} {goal.label}
                 </Small>
                 <Small style={{ marginTop: 2 }}>{goal.reality}</Small>

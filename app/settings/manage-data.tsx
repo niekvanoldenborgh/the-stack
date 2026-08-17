@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 
 import { useAppStore } from '../../src/store/useAppStore';
 import { Body, Button, Callout, Card, Caption, Row, Screen, SectionTitle, Small, Spacer } from '../../src/ui/components';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Manage data — export.
@@ -14,6 +14,8 @@ import { colors, spacing } from '../../src/ui/theme';
  * an unreviewed data-egress path.
  */
 export default function ManageDataScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const stacks = useAppStore((s) => s.stacks);
   const doseLogs = useAppStore((s) => s.doseLogs);
   const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
@@ -38,7 +40,7 @@ export default function ManageDataScreen() {
         {counts.map((row, index) => (
           <Row key={row.label} justify="space-between" style={{ marginTop: index === 0 ? 0 : spacing.sm }}>
             <Small>{row.label}</Small>
-            <Small muted={false} style={{ color: colors.text }}>{row.value}</Small>
+            <Small muted={false} style={{ color: color.textPrimary }}>{row.value}</Small>
           </Row>
         ))}
       </Card>
@@ -59,7 +61,7 @@ export default function ManageDataScreen() {
           sensitive from leaving your device unintentionally. The buttons turn on once the format is signed off.
         </Body>
       </Callout>
-      <Caption color={colors.textFaint}>Tracked in THEA-12a · reviewer: Benji (Audit/Compliance)</Caption>
+      <Caption color={color.textTertiary}>Tracked in THEA-12a · reviewer: Benji (Audit/Compliance)</Caption>
     </Screen>
   );
 }

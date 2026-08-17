@@ -42,7 +42,7 @@ import {
 import { RiskPicker } from '../../src/ui/RiskPicker';
 import { RulerPicker } from '../../src/ui/RulerPicker';
 import { List, ListItem, Section } from '../../src/ui/primitives';
-import { LEGAL_LABELS, colors, radius, spacing, typography } from '../../src/ui/theme';
+import { LEGAL_LABELS, radius, spacing, typography, useTheme } from '../../src/ui/theme';
 
 type Step = 'disclaimer' | 'basics' | 'lifestyle' | 'goals' | 'current' | 'health' | 'review';
 
@@ -77,6 +77,8 @@ const EXPERIENCE_OPTIONS: Array<{ id: Experience; label: string; hint: string }>
  */
 export default function Onboarding() {
   const router = useRouter();
+  const theme = useTheme();
+  const { color } = theme;
   const saveProfile = useAppStore((s) => s.saveProfile);
   const updateProfile = useAppStore((s) => s.updateProfile);
 
@@ -204,12 +206,12 @@ export default function Onboarding() {
     <Screen>
       <Spacer size={spacing.lg} />
       <Row justify="space-between" style={{ marginBottom: spacing.sm }}>
-        <Caption color={colors.textMuted}>
+        <Caption color={color.textSecondary}>
           Step {stepIndex + 1} of {STEPS.length}
         </Caption>
         {stepIndex > 0 ? (
           <Pressable onPress={() => setStepIndex((i) => Math.max(0, i - 1))} accessibilityRole="button">
-            <Small muted={false} style={{ color: colors.accent }}>
+            <Small muted={false} style={{ color: color.primary }}>
               Back
             </Small>
           </Pressable>
@@ -240,7 +242,7 @@ export default function Onboarding() {
 
           <Section title="Body measurements" gap={spacing.xl}>
             <View>
-              <Caption color={colors.textMuted}>Age</Caption>
+              <Caption color={color.textSecondary}>Age</Caption>
               <Spacer size={spacing.md} />
               <RulerPicker value={age} onChange={setAge} min={13} max={90} unit="years" />
               {age < 21 ? (
@@ -260,7 +262,7 @@ export default function Onboarding() {
             <Divider />
 
             <View>
-              <Caption color={colors.textMuted}>Bodyweight</Caption>
+              <Caption color={color.textSecondary}>Bodyweight</Caption>
               <Spacer size={spacing.md} />
               <RulerPicker value={weightKg} onChange={setWeightKg} min={35} max={200} unit="kg" />
             </View>
@@ -268,7 +270,7 @@ export default function Onboarding() {
             <Divider />
 
             <View>
-              <Caption color={colors.textMuted}>Height</Caption>
+              <Caption color={color.textSecondary}>Height</Caption>
               <Spacer size={spacing.md} />
               <RulerPicker value={heightCm} onChange={setHeightCm} min={130} max={220} unit="cm" />
             </View>
@@ -304,7 +306,7 @@ export default function Onboarding() {
 
           <Section title="Training" gap={spacing.xl}>
             <View>
-              <Caption color={colors.textMuted}>Activity level</Caption>
+              <Caption color={color.textSecondary}>Activity level</Caption>
               <Spacer size={spacing.md} />
               {ACTIVITY_OPTIONS.map((option) => (
                 <Chip
@@ -320,7 +322,7 @@ export default function Onboarding() {
             <Divider />
 
             <View>
-              <Caption color={colors.textMuted}>Training days per week</Caption>
+              <Caption color={color.textSecondary}>Training days per week</Caption>
               <Spacer size={spacing.md} />
               <Row wrap>
                 {([2, 3, 4, 5, 6] as TrainingDaysPerWeek[]).map((days) => (
@@ -337,7 +339,7 @@ export default function Onboarding() {
             <Divider />
 
             <View>
-              <Caption color={colors.textMuted}>Peptide experience</Caption>
+              <Caption color={color.textSecondary}>Peptide experience</Caption>
               <Spacer size={spacing.md} />
               {EXPERIENCE_OPTIONS.map((option) => (
                 <Chip
@@ -353,7 +355,7 @@ export default function Onboarding() {
 
           <Section title="Sleep" gap={spacing.xl} last>
             <View>
-              <Caption color={colors.textMuted}>Average sleep per night</Caption>
+              <Caption color={color.textSecondary}>Average sleep per night</Caption>
               <Spacer size={spacing.md} />
               <RulerPicker value={sleepHours} onChange={setSleepHours} min={3} max={11} step={0.5} unit="hours" />
               {sleepHours < 6.5 ? (
@@ -369,7 +371,7 @@ export default function Onboarding() {
             <Divider />
 
             <View>
-              <Caption color={colors.textMuted}>Sleep quality</Caption>
+              <Caption color={color.textSecondary}>Sleep quality</Caption>
               <Spacer size={spacing.md} />
               <Row wrap>
                 {[1, 2, 3, 4, 5].map((score) => (
@@ -406,8 +408,8 @@ export default function Onboarding() {
                 accessibilityState={{ selected }}
                 onPress={() => toggleGoal(goal.id)}
                 style={({ pressed }) => ({
-                  backgroundColor: selected ? `${colors.accent}14` : colors.surface,
-                  borderColor: selected ? colors.accent : colors.border,
+                  backgroundColor: selected ? `${color.primary}14` : color.surface,
+                  borderColor: selected ? color.primary : color.border,
                   borderWidth: 1,
                   borderRadius: radius.md,
                   padding: spacing.lg,
@@ -426,8 +428,8 @@ export default function Onboarding() {
                   {selected ? <Badge label={`${index + 1}`} tone="accent" solid /> : null}
                 </Row>
                 {selected ? (
-                  <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border }}>
-                    <Caption color={colors.moderate}>Reality check</Caption>
+                  <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: color.border }}>
+                    <Caption color={theme.tone('moderate').fg}>Reality check</Caption>
                     <Small style={{ marginTop: spacing.xs }}>{goal.reality}</Small>
                   </View>
                 ) : null}
@@ -604,12 +606,13 @@ export default function Onboarding() {
 
       <Spacer size={spacing.xl} />
       {stepIndex === STEPS.length - 1 ? (
-        <Button label="Build my stack" onPress={finish} disabled={!canAdvance()} />
+        <Button label="Build my stack" onPress={finish} disabled={!canAdvance()} gradient />
       ) : (
         <Button
           label={step === 'disclaimer' ? 'I understand — continue' : 'Continue'}
           onPress={() => setStepIndex((i) => Math.min(STEPS.length - 1, i + 1))}
           disabled={!canAdvance()}
+          gradient
         />
       )}
       {step === 'goals' && goals.length === 0 ? (
@@ -629,6 +632,8 @@ export default function Onboarding() {
 }
 
 function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: 'moderate' }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <Row justify="space-between" align="flex-start" gap={spacing.lg}>
       <Small style={{ flexShrink: 0 }}>{label}</Small>
@@ -636,7 +641,7 @@ function SummaryRow({ label, value, tone }: { label: string; value: string; tone
         style={{
           flex: 1,
           textAlign: 'right',
-          color: tone === 'moderate' ? colors.moderate : colors.text,
+          color: tone === 'moderate' ? theme.tone('moderate').fg : color.textPrimary,
           ...typography.bodyStrong,
         }}
       >
@@ -661,12 +666,16 @@ function DisclaimerStep({
   sourcing: boolean;
   setSourcing: (v: boolean) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <View>
-      <Logo size={52} />
-      <Spacer size={spacing.lg} />
-      <Display>The Stack</Display>
-      <Title style={{ color: colors.accent, marginTop: spacing.xs }}>Read this properly</Title>
+      <Section gradient tone={3}>
+        <Logo size={52} tint={color.onPrimary} />
+        <Spacer size={spacing.lg} />
+        <Display style={{ color: color.onPrimary }}>The Stack</Display>
+        <Title style={{ color: color.onPrimary, marginTop: spacing.xs, opacity: 0.85 }}>Read this properly</Title>
+      </Section>
       <Body muted style={{ marginTop: spacing.md }}>
         This app exists because people use peptides whether or not good information is available. It is built to
         make that safer and more controlled — not to encourage it.

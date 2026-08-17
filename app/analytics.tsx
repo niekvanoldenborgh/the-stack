@@ -34,9 +34,11 @@ import {
   StatTile,
 } from '../src/ui/components';
 import { Reveal } from '../src/ui/motion';
-import { colors, spacing } from '../src/ui/theme';
+import { spacing, useTheme } from '../src/ui/theme';
 
 export default function AnalyticsScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const profile = useAppStore((s) => s.profile);
   const workoutLogs = useAppStore((s) => s.workoutLogs);
   const doseLogs = useAppStore((s) => s.doseLogs);
@@ -82,7 +84,7 @@ export default function AnalyticsScreen() {
     <Screen>
       <Spacer size={spacing.md} />
       <Reveal index={0}>
-        <Caption color={colors.accent}>Last 8 weeks</Caption>
+        <Caption color={color.primary}>Last 8 weeks</Caption>
         <Display style={{ marginTop: spacing.sm }}>Analytics</Display>
       </Reveal>
 
@@ -116,15 +118,15 @@ export default function AnalyticsScreen() {
           <Card>
             <Row justify="space-between" align="flex-end">
               <View style={{ flex: 1 }}>
-                <Caption color={colors.textMuted}>Taken vs skipped</Caption>
+                <Caption color={color.textSecondary}>Taken vs skipped</Caption>
                 <Small style={{ marginTop: spacing.xs }}>
                   Only doses you actually logged count. Unlogged ones are left out rather than assumed missed.
                 </Small>
               </View>
               {adherencePct !== null ? (
-                <Metric color={adherencePct >= 80 ? colors.accent : colors.moderate} style={{ fontSize: 34 }}>
+                <Metric color={adherencePct >= 80 ? color.primary : theme.tone('moderate').fg} style={{ fontSize: 34 }}>
                   {adherencePct}
-                  <Data color={colors.textMuted}>%</Data>
+                  <Data color={color.textSecondary}>%</Data>
                 </Metric>
               ) : null}
             </Row>
@@ -147,9 +149,9 @@ export default function AnalyticsScreen() {
             {/* Two series, so a legend is mandatory — identity is never colour alone. */}
             <Legend
               items={[
-                { label: 'Taken', color: colors.accent },
-                { label: 'Skipped', color: colors.borderBright },
-                { label: 'Scheduled', color: colors.surfaceHigh },
+                { label: 'Taken', color: color.primary },
+                { label: 'Skipped', color: color.borderStrong },
+                { label: 'Scheduled', color: color.surfaceMuted },
               ]}
             />
           </Card>
@@ -170,12 +172,12 @@ export default function AnalyticsScreen() {
           <Card>
             <Row justify="space-between" align="flex-end">
               <View style={{ flex: 1 }}>
-                <Caption color={colors.textMuted}>Weekly load moved</Caption>
+                <Caption color={color.textSecondary}>Weekly load moved</Caption>
                 <Small style={{ marginTop: spacing.xs }}>Sets × reps × weight, per week.</Small>
               </View>
               <Metric style={{ fontSize: 30 }}>
                 {Math.round(summary.totalVolumeKg / 1000)}
-                <Data color={colors.textMuted}>t total</Data>
+                <Data color={color.textSecondary}>t total</Data>
               </Metric>
             </Row>
             <Divider />
@@ -206,7 +208,7 @@ export default function AnalyticsScreen() {
                   <Row justify="space-between" style={{ marginBottom: spacing.sm }}>
                     <View style={{ flex: 1 }}>
                       <Small muted={false}>{trend.name}</Small>
-                      <Data color={colors.textFaint} small>
+                      <Data color={color.textTertiary} small>
                         {trend.points.length} session{trend.points.length === 1 ? '' : 's'} · best{' '}
                         {Math.max(...trend.points.map((p) => p.estimatedMax))} kg
                       </Data>
@@ -265,8 +267,8 @@ export default function AnalyticsScreen() {
       <Reveal index={6}>
         <Card tone={effects.some((e) => e.severe > 0) ? 'critical' : undefined}>
           <Row gap={spacing.sm} style={{ marginBottom: spacing.sm }}>
-            <Ionicons name="pulse" size={16} color={colors.moderate} />
-            <Caption color={colors.textMuted}>Logged entries per week</Caption>
+            <Ionicons name="pulse" size={16} color={theme.tone('moderate').fg} />
+            <Caption color={color.textSecondary}>Logged entries per week</Caption>
           </Row>
           {!hasEffects ? (
             <Small>
@@ -284,14 +286,14 @@ export default function AnalyticsScreen() {
                   accessibilityLabel: `${weekLabel(week.weekStart, date)}: ${week.total} entries — ${week.mild} mild, ${week.moderate} moderate, ${week.severe} severe`,
                 }))}
                 height={92}
-                tint={colors.moderate}
-                secondaryTint={colors.critical}
+                tint={theme.tone('moderate').fg}
+                secondaryTint={theme.tone('critical').fg}
                 showPeakLabel={false}
               />
               <Legend
                 items={[
-                  { label: 'Mild / moderate', color: colors.moderate },
-                  { label: 'Severe', color: colors.critical },
+                  { label: 'Mild / moderate', color: theme.tone('moderate').fg },
+                  { label: 'Severe', color: theme.tone('critical').fg },
                 ]}
               />
               <Divider />

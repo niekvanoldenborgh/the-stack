@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 
 import { useAppStore } from '../../src/store/useAppStore';
 import { Body, Button, Callout, Card, Caption, Row, Screen, SectionTitle, Small, Spacer } from '../../src/ui/components';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Delete account.
@@ -15,6 +15,8 @@ import { colors, spacing } from '../../src/ui/theme';
  * unreviewed irreversible action.
  */
 export default function DeleteAccountScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const stacks = useAppStore((s) => s.stacks);
   const doseLogs = useAppStore((s) => s.doseLogs);
 
@@ -42,7 +44,7 @@ export default function DeleteAccountScreen() {
       <Card tone="critical">
         {willRemove.map((item, index) => (
           <Row key={index} gap={spacing.sm} align="flex-start" style={{ marginBottom: spacing.sm }}>
-            <Small muted={false} style={{ color: colors.critical }}>·</Small>
+            <Small muted={false} style={{ color: theme.tone('critical').fg }}>·</Small>
             <Small style={{ flex: 1 }}>{item}</Small>
           </Row>
         ))}
@@ -58,7 +60,7 @@ export default function DeleteAccountScreen() {
           is enabled. The underlying wipe is ready; only the reviewed confirmation gate is pending.
         </Body>
       </Callout>
-      <Caption color={colors.textFaint}>Tracked in THEA-12a · reviewers: Benji (Audit/Compliance), CEO (product)</Caption>
+      <Caption color={color.textTertiary}>Tracked in THEA-12a · reviewers: Benji (Audit/Compliance), CEO (product)</Caption>
     </Screen>
   );
 }

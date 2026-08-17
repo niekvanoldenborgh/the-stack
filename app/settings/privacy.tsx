@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { Body, Callout, Card, Caption, Row, Screen, SectionTitle, Small, Spacer } from '../../src/ui/components';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Privacy.
@@ -13,6 +13,7 @@ import { colors, spacing } from '../../src/ui/theme';
  * developers do not author privacy/legal copy.
  */
 export default function PrivacyScreen() {
+  const { color } = useTheme();
   return (
     <Screen>
       <Stack.Screen options={{ title: 'Privacy' }} />
@@ -22,15 +23,15 @@ export default function PrivacyScreen() {
       <Card>
         <Row justify="space-between">
           <Small>Storage</Small>
-          <Small muted={false} style={{ color: colors.text }}>On this device only</Small>
+          <Small muted={false} style={{ color: color.textPrimary }}>On this device only</Small>
         </Row>
         <Row justify="space-between" style={{ marginTop: spacing.sm }}>
           <Small>Account server</Small>
-          <Small muted={false} style={{ color: colors.text }}>None</Small>
+          <Small muted={false} style={{ color: color.textPrimary }}>None</Small>
         </Row>
         <Row justify="space-between" style={{ marginTop: spacing.sm }}>
           <Small>Third-party analytics</Small>
-          <Small muted={false} style={{ color: colors.text }}>None</Small>
+          <Small muted={false} style={{ color: color.textPrimary }}>None</Small>
         </Row>
       </Card>
       <Body muted>
@@ -45,7 +46,7 @@ export default function PrivacyScreen() {
         </Body>
       </Callout>
 
-      <Caption color={colors.textFaint}>Tracked in THEA-12a · reviewer: Benji (Audit/Compliance)</Caption>
+      <Caption color={color.textTertiary}>Tracked in THEA-12a · reviewer: Benji (Audit/Compliance)</Caption>
     </Screen>
   );
 }

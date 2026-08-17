@@ -4,10 +4,12 @@ import { riskBand } from '../src/engine/safety';
 import { useActiveStack } from '../src/store/useAppStore';
 import { Button, Caption, Display, EmptyState, Screen, Spacer } from '../src/ui/components';
 import { SafetyReportView } from '../src/ui/SafetyReport';
-import { colors, spacing } from '../src/ui/theme';
+import { spacing, useTheme } from '../src/ui/theme';
 
 /** Unified safety-report surface (THEA-38) — see src/ui/SafetyReport.tsx. */
 export default function SafetyScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const router = useRouter();
   const stack = useActiveStack();
 
@@ -25,7 +27,7 @@ export default function SafetyScreen() {
   return (
     <Screen>
       <Spacer size={spacing.md} />
-      <Caption color={colors.textMuted}>{stack.name}</Caption>
+      <Caption color={color.textSecondary}>{stack.name}</Caption>
       <Display style={{ marginTop: spacing.xs, marginBottom: spacing.lg }}>Safety report</Display>
 
       <SafetyReportView

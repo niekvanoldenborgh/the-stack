@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
 
 import { getExercise } from '../../src/domain/exercises';
 import type { LoggedExercise, LoggedSet, PlannedExercise } from '../../src/domain/types';
@@ -23,11 +23,13 @@ import {
   Spacer,
   Title,
 } from '../../src/ui/components';
-import { colors, radius, spacing, typography } from '../../src/ui/theme';
+import { radius, spacing, typography, useTheme } from '../../src/ui/theme';
 
 type Draft = Record<string, LoggedSet[]>;
 
 export default function SessionScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigation = useNavigation();
@@ -115,7 +117,7 @@ export default function SessionScreen() {
         <View style={{ marginTop: spacing.lg }}>
           {session.adjustments.map((adjustment, index) => (
             <Callout key={index} tone="info" title="Adjusted for you">
-              <Small muted={false} style={{ color: colors.text }}>
+              <Small muted={false} style={{ color: color.textPrimary }}>
                 {adjustment}
               </Small>
             </Callout>
@@ -155,11 +157,27 @@ function ExerciseBlock({
   lastSets: LoggedSet[];
   onChange: (index: number, patch: Partial<LoggedSet>) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
+  // Tracks which of the two per-row inputs (if any) is focused, so the field
+  // border can answer focus with `color.primary` per the form-field spec —
+  // keyed by `${index}-weight` / `${index}-reps` since each set row has two.
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
   const exercise = getExercise(planned.exerciseId);
   if (!exercise) return null;
 
   const targetReps = planned.sets[0]?.reps ?? 8;
   const suggestion = suggestNextLoad(lastSets, targetReps);
+
+  const fieldStyle = (key: string): StyleProp<TextStyle> => [
+    styles.numberInput,
+    {
+      backgroundColor: color.surfaceSunken,
+      borderColor: focusedField === key ? color.primary : color.border,
+      color: color.textPrimary,
+    },
+  ];
 
   return (
     <Card>
@@ -168,12 +186,12 @@ function ExerciseBlock({
         {planned.sets.length} sets × {targetReps} reps · RIR {planned.sets[0]?.rir ?? 2} ·{' '}
         {planned.restSeconds}s rest
       </Small>
-      {planned.note ? <Small style={{ marginTop: spacing.xs, color: colors.accent }}>{planned.note}</Small> : null}
+      {planned.note ? <Small style={{ marginTop: spacing.xs, color: color.primary }}>{planned.note}</Small> : null}
 
       {suggestion ? (
         <View style={{ marginTop: spacing.md }}>
           <Callout tone="accent" title={`Suggested: ${suggestion.weightKg} kg`}>
-            <Small muted={false} style={{ color: colors.text }}>
+            <Small muted={false} style={{ color: color.textPrimary }}>
               {suggestion.note}
             </Small>
           </Callout>
@@ -182,10 +200,10 @@ function ExerciseBlock({
 
       <Divider />
       <Row justify="space-between" style={{ marginBottom: spacing.sm }}>
-        <Caption color={colors.textFaint}>Set</Caption>
+        <Caption color={color.textTertiary}>Set</Caption>
         <Row gap={spacing.md}>
-          <Caption color={colors.textFaint}>Weight (kg)</Caption>
-          <Caption color={colors.textFaint}>Reps</Caption>
+          <Caption color={color.textTertiary}>Weight (kg)</Caption>
+          <Caption color={color.textTertiary}>Reps</Caption>
         </Row>
       </Row>
 
@@ -198,23 +216,27 @@ function ExerciseBlock({
               onChangeText={(text) => onChange(index, { weightKg: Number(text.replace(',', '.')) || 0 })}
               keyboardType="decimal-pad"
               placeholder="—"
-              placeholderTextColor={colors.textFaint}
-              style={styles.numberInput}
+              placeholderTextColor={color.textTertiary}
+              onFocus={() => setFocusedField(`${index}-weight`)}
+              onBlur={() => setFocusedField((current) => (current === `${index}-weight` ? null : current))}
+              style={fieldStyle(`${index}-weight`)}
             />
             <TextInput
               value={sets[index]?.reps ? String(sets[index]!.reps) : ''}
               onChangeText={(text) => onChange(index, { reps: parseInt(text, 10) || 0 })}
               keyboardType="number-pad"
               placeholder={String(plannedSet.reps)}
-              placeholderTextColor={colors.textFaint}
-              style={styles.numberInput}
+              placeholderTextColor={color.textTertiary}
+              onFocus={() => setFocusedField(`${index}-reps`)}
+              onBlur={() => setFocusedField((current) => (current === `${index}-reps` ? null : current))}
+              style={fieldStyle(`${index}-reps`)}
             />
           </Row>
         </Row>
       ))}
 
       <Divider />
-      <Caption color={colors.textFaint}>Cues</Caption>
+      <Caption color={color.textTertiary}>Cues</Caption>
       <Spacer size={spacing.xs} />
       {exercise.cues.map((cue, index) => (
         <Small key={index} style={{ marginBottom: 2 }}>
@@ -228,13 +250,10 @@ function ExerciseBlock({
 const styles = StyleSheet.create({
   numberInput: {
     width: 78,
-    backgroundColor: colors.surfaceHigh,
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
-    color: colors.text,
     textAlign: 'center',
     ...typography.bodyStrong,
   },

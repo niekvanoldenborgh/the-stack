@@ -6,7 +6,7 @@ import { getPermissionState, requestPermission, type PermissionState } from '../
 import { useAppStore } from '../../src/store/useAppStore';
 import type { NotificationPurposes } from '../../src/store/useAppStore';
 import { Body, Callout, Screen, SectionTitle, Small, Spacer, Toggle } from '../../src/ui/components';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing } from '../../src/ui/theme';
 
 const PURPOSES: Array<{ key: keyof NotificationPurposes; label: string; description: string }> = [
   { key: 'doseReminders', label: 'Dose reminders', description: 'Alerts when a scheduled injection is due.' },

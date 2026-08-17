@@ -26,7 +26,7 @@ import {
 import { SeverityIcon } from '../../src/ui/icons';
 import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
 import { RangeBar } from '../../src/ui/RangeBar';
-import { EVIDENCE_LABELS, LEGAL_LABELS, colors, evidenceColor, radius, spacing } from '../../src/ui/theme';
+import { EVIDENCE_LABELS, LEGAL_LABELS, radius, spacing, useTheme } from '../../src/ui/theme';
 
 /**
  * Peptide detail — redesigned THEA-38.
@@ -57,6 +57,8 @@ function doseUnitLabel(unit: string): string {
 }
 
 export default function PeptideDetail() {
+  const theme = useTheme();
+  const { color } = theme;
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
   const profile = useAppStore((s) => s.profile);
@@ -118,10 +120,10 @@ export default function PeptideDetail() {
             paddingVertical: 3,
             borderRadius: radius.sm,
             borderWidth: 1,
-            borderColor: evidenceColor(peptide.evidence),
+            borderColor: theme.evidence(peptide.evidence),
           }}
         >
-          <Caption color={evidenceColor(peptide.evidence)}>
+          <Caption color={theme.evidence(peptide.evidence)}>
             Evidence {peptide.evidence} · {EVIDENCE_LABELS[peptide.evidence]}
           </Caption>
         </View>
@@ -143,7 +145,7 @@ export default function PeptideDetail() {
                   : `Caution for you — ${HEALTH_FLAGS_BY_ID[c.flag]?.label ?? c.flag}`
               }
             >
-              <Small muted={false} style={{ color: colors.text }}>
+              <Small muted={false} style={{ color: color.textPrimary }}>
                 {c.reason}
               </Small>
             </Callout>
@@ -155,7 +157,7 @@ export default function PeptideDetail() {
       <Spacer size={spacing.xl} />
       {peptide.doseGuidanceWithheld ? (
         <Callout tone="critical" title="This app shows no dose for this compound">
-          <Small muted={false} style={{ color: colors.text }}>
+          <Small muted={false} style={{ color: color.textPrimary }}>
             {peptide.doseGuidanceWithheld.reason}
           </Small>
         </Callout>
@@ -168,7 +170,7 @@ export default function PeptideDetail() {
                   eyebrow="Per administration"
                   value={`${computation.dose.value}`}
                   unit={doseUnitLabel(computation.dose.unit)}
-                  tone={colors.accent}
+                  tone={color.primary}
                   meta={
                     computation.startDose.value !== computation.dose.value
                       ? `Starts at ${formatDose(computation.startDose)} and ramps up.`
@@ -176,7 +178,7 @@ export default function PeptideDetail() {
                   }
                 />
                 <View>
-                  <Caption color={colors.textMuted}>How this number was reached</Caption>
+                  <Caption color={color.textSecondary}>How this number was reached</Caption>
                   <List style={{ marginTop: spacing.sm }}>
                     {computation.factors.map((factor, index) => (
                       <ListItem key={index} title={factor} />
@@ -186,7 +188,7 @@ export default function PeptideDetail() {
                 {computation.advisories.length > 0 ? (
                   <View>
                     {computation.advisories.map((advisory, index) => (
-                      <Small key={index} muted={false} style={{ color: colors.text, marginBottom: spacing.sm }}>
+                      <Small key={index} muted={false} style={{ color: color.textPrimary, marginBottom: spacing.sm }}>
                         {advisory}
                       </Small>
                     ))}
@@ -267,7 +269,7 @@ export default function PeptideDetail() {
                     title={goal.label}
                     tone={negative ? 'critical' : 'accent'}
                     meta={
-                      <Small muted={false} style={{ color: negative ? colors.critical : colors.accent }}>
+                      <Small muted={false} style={{ color: negative ? theme.tone('critical').fg : color.primary }}>
                         {negative ? `works against · ${fit}` : `${fit}/5`}
                       </Small>
                     }
@@ -290,7 +292,13 @@ export default function PeptideDetail() {
                 <Row gap={spacing.xs} align="center">
                   <SeverityIcon severity={severity === 'severe' ? 'critical' : severity === 'moderate' ? 'moderate' : 'info'} size={13} />
                   <Caption
-                    color={severity === 'severe' ? colors.critical : severity === 'moderate' ? colors.moderate : colors.textMuted}
+                    color={
+                      severity === 'severe'
+                        ? theme.tone('critical').fg
+                        : severity === 'moderate'
+                          ? theme.tone('moderate').fg
+                          : color.textSecondary
+                    }
                   >
                     {severity}
                   </Caption>
@@ -393,6 +401,8 @@ export default function PeptideDetail() {
 }
 
 function ReconstitutionSection({ doseValue, doseUnit }: { doseValue: number; doseUnit: 'mcg' | 'mg' }) {
+  const theme = useTheme();
+  const { color } = theme;
   const [vialMg, setVialMg] = useState(5);
   const [waterMl, setWaterMl] = useState(2);
 
@@ -427,10 +437,10 @@ function ReconstitutionSection({ doseValue, doseUnit }: { doseValue: number; dos
           <Row justify="space-between" align="center" style={{ marginTop: spacing.sm }}>
             <Small>Draw for your dose</Small>
             <Row gap={spacing.xs} align="flex-end">
-              <Data color={colors.accent} style={{ fontSize: 24 }}>
+              <Data color={color.primary} style={{ fontSize: 24 }}>
                 {result.unitsForDose}
               </Data>
-              <Data color={colors.textMuted}>units</Data>
+              <Data color={color.textSecondary}>units</Data>
             </Row>
           </Row>
           <Small style={{ marginTop: spacing.sm }}>
@@ -438,7 +448,7 @@ function ReconstitutionSection({ doseValue, doseUnit }: { doseValue: number; dos
           </Small>
           {result.warning ? (
             <Callout tone="moderate" title="Adjust your mix">
-              <Small muted={false} style={{ color: colors.text }}>
+              <Small muted={false} style={{ color: color.textPrimary }}>
                 {result.warning}
               </Small>
             </Callout>

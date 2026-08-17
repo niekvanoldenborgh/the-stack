@@ -6,7 +6,7 @@ import { useAppStore } from '../../src/store/useAppStore';
 import { Body, Button, Card, Caption, Screen, Small, Spacer } from '../../src/ui/components';
 import { RulerPicker } from '../../src/ui/RulerPicker';
 import { Segmented } from '../../src/ui/schedule';
-import { colors, spacing } from '../../src/ui/theme';
+import { spacing, useTheme } from '../../src/ui/theme';
 
 const ACTIVITY_OPTIONS: Array<{ value: ActivityLevel; label: string }> = [
   { value: 'sedentary', label: 'Sedentary' },
@@ -17,9 +17,10 @@ const ACTIVITY_OPTIONS: Array<{ value: ActivityLevel; label: string }> = [
 ];
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const { color } = useTheme();
   return (
     <Card>
-      <Caption color={colors.textMuted}>{label}</Caption>
+      <Caption color={color.textSecondary}>{label}</Caption>
       <Spacer size={spacing.md} />
       {children}
     </Card>

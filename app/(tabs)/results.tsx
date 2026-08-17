@@ -32,7 +32,7 @@ import {
   TextField,
 } from '../../src/ui/components';
 import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
-import { colors, fonts, radius, spacing, typography } from '../../src/ui/theme';
+import { fonts, radius, spacing, typography, useTheme } from '../../src/ui/theme';
 
 /**
  * Results — the goal tracker, redesigned THEA-38b.
@@ -103,6 +103,8 @@ function changeLineText(descriptor: Descriptor, summary: MetricSummary): string 
 }
 
 export default function ResultsScreen() {
+  const theme = useTheme();
+  const { color } = theme;
   const router = useRouter();
   const profile = useAppStore((s) => s.profile);
   const measurements = useAppStore((s) => s.measurements);
@@ -184,7 +186,7 @@ export default function ResultsScreen() {
   return (
     <Screen>
       <Spacer size={spacing.md} />
-      <Caption color={colors.accent}>Progress</Caption>
+      <Caption color={color.primary}>Progress</Caption>
       <Display style={{ marginTop: spacing.sm, marginBottom: spacing.lg }}>Results</Display>
 
       <Callout tone="info" title="Your own measurements">
@@ -208,7 +210,7 @@ export default function ResultsScreen() {
         />
       ) : (
         <Section tone={2}>
-          <Caption color={colors.accent}>Progress</Caption>
+          <Caption color={color.primary}>Progress</Caption>
           <Small style={{ marginTop: spacing.sm }}>
             Pick a goal in onboarding to see a tracked measure here, or add a custom one below.
           </Small>
@@ -271,6 +273,8 @@ function PrimaryMetricSection({
   onSetTarget: (value: number, baseline: number) => void;
   onClearTarget: () => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   const latest = summary?.latest ?? null;
   const figure = latest != null ? focalValue(latest, descriptor) : { value: '—' };
   const changeText = summary && summary.change !== null && summary.first !== null ? changeLineText(descriptor, summary) : undefined;
@@ -283,7 +287,7 @@ function PrimaryMetricSection({
       {target && progressPct !== null ? (
         <View>
           <ProgressBar value={progressPct} tone="accent" />
-          <Caption color={colors.textFaint} style={{ marginTop: spacing.xs }}>
+          <Caption color={color.textTertiary} style={{ marginTop: spacing.xs }}>
             {`${Math.round(progressPct)}% of the way to your target of ${valueLabel(target.value, descriptor)}`}
           </Caption>
         </View>
@@ -317,6 +321,8 @@ function GoalTargetEditor({
   onSet: (value: number, baseline: number) => void;
   onClear: () => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
 
@@ -363,10 +369,10 @@ function GoalTargetEditor({
         <Small>{`Target: ${valueLabel(target.value, descriptor)}`}</Small>
         <Row gap={spacing.lg}>
           <Pressable accessibilityRole="button" accessibilityLabel="Edit target" hitSlop={8} onPress={startEditing}>
-            <Small style={{ color: colors.accent }}>Edit</Small>
+            <Small style={{ color: color.primary }}>Edit</Small>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Clear target" hitSlop={8} onPress={onClear}>
-            <Small style={{ color: colors.textFaint }}>Clear</Small>
+            <Small style={{ color: color.textTertiary }}>Clear</Small>
           </Pressable>
         </Row>
       </Row>
@@ -424,6 +430,8 @@ function MetricDetail({
   onAdd: (entry: Omit<Measurement, 'id'>) => void;
   onRemove: (id: string) => void;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   const [adding, setAdding] = useState(false);
   const hasData = Boolean(summary && summary.count >= 1);
 
@@ -438,8 +446,8 @@ function MetricDetail({
               .join(', ')}`}
           />
           <Row justify="space-between" style={{ marginTop: spacing.sm }}>
-            <Caption color={colors.textFaint}>{formatShort(summary.points[0]!.date)}</Caption>
-            <Caption color={colors.textFaint}>{formatShort(summary.points[summary.points.length - 1]!.date)}</Caption>
+            <Caption color={color.textTertiary}>{formatShort(summary.points[0]!.date)}</Caption>
+            <Caption color={color.textTertiary}>{formatShort(summary.points[summary.points.length - 1]!.date)}</Caption>
           </Row>
         </>
       ) : (
@@ -455,7 +463,7 @@ function MetricDetail({
                 title={relativeLabel(entry.date)}
                 meta={
                   <Row gap={spacing.md}>
-                    <Data small color={colors.textMuted}>
+                    <Data small color={color.textSecondary}>
                       {valueLabel(entry.value, descriptor)}
                     </Data>
                     <Pressable
@@ -464,7 +472,7 @@ function MetricDetail({
                       hitSlop={8}
                       onPress={() => onRemove(entry.id)}
                     >
-                      <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
+                      <Text style={{ color: color.textTertiary, fontFamily: fonts.regular, fontSize: 15 }}>✕</Text>
                     </Pressable>
                   </Row>
                 }
@@ -472,7 +480,7 @@ function MetricDetail({
             ))}
           </List>
           {entries.length > 3 ? (
-            <Caption color={colors.textFaint} style={{ marginTop: spacing.sm }}>
+            <Caption color={color.textTertiary} style={{ marginTop: spacing.sm }}>
               +{entries.length - 3} earlier
             </Caption>
           ) : null}
@@ -587,10 +595,12 @@ function AddForm({
 
 /** Day stepper, capped at today — you cannot log a reading in the future. */
 function DateField({ date, onChange }: { date: string; onChange: (next: string) => void }) {
+  const theme = useTheme();
+  const { color } = theme;
   const atToday = date >= today();
   return (
     <Row justify="space-between">
-      <Caption color={colors.textMuted}>Date</Caption>
+      <Caption color={color.textSecondary}>Date</Caption>
       <Row gap={spacing.md}>
         <StepButton label="‹" accessibilityLabel="Previous day" onPress={() => onChange(addDays(date, -1))} />
         <View style={{ minWidth: 96, alignItems: 'center' }}>
@@ -618,20 +628,28 @@ function StepButton({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       onPress={disabled ? undefined : onPress}
-      style={[styles.stepButton, { opacity: disabled ? 0.35 : 1 }]}
+      style={[
+        styles.stepButton,
+        { borderColor: color.borderStrong, backgroundColor: color.surfaceMuted },
+        { opacity: disabled ? 0.35 : 1 },
+      ]}
     >
-      <Text style={[typography.title, { color: colors.text }]}>{label}</Text>
+      <Text style={[typography.title, { color: color.textPrimary }]}>{label}</Text>
     </Pressable>
   );
 }
 
 function ScaleField({ value, onChange }: { value: number | null; onChange: (next: number) => void }) {
+  const theme = useTheme();
+  const { color } = theme;
   const levels = Array.from({ length: SCALE_MAX - SCALE_MIN + 1 }, (_, i) => SCALE_MIN + i);
   return (
     <Row gap={spacing.sm}>
@@ -647,12 +665,12 @@ function ScaleField({ value, onChange }: { value: number | null; onChange: (next
             style={[
               styles.scaleCell,
               {
-                borderColor: selected ? colors.accent : colors.border,
-                backgroundColor: selected ? colors.accentDim : colors.surface,
+                borderColor: selected ? color.primary : color.border,
+                backgroundColor: selected ? color.primarySoft : color.surface,
               },
             ]}
           >
-            <Data color={selected ? colors.accent : colors.textMuted}>{level}</Data>
+            <Data color={selected ? color.primary : color.textSecondary}>{level}</Data>
           </Pressable>
         );
       })}
@@ -731,8 +749,6 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.borderBright,
-    backgroundColor: colors.surfaceHigh,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -25,7 +25,7 @@ import {
 } from '../../src/ui/components';
 import { List, ListItem, Section } from '../../src/ui/primitives';
 import { Segmented } from '../../src/ui/schedule';
-import { colors, fonts, radius, spacing, type SeverityTone, typography } from '../../src/ui/theme';
+import { fonts, radius, spacing, useTheme, type SeverityTone, typography } from '../../src/ui/theme';
 
 /**
  * Logger, redesigned THEA-40.
@@ -63,12 +63,13 @@ function parseNumber(text: string): number {
 }
 
 export default function LoggerScreen() {
+  const theme = useTheme();
   const [mode, setMode] = useState<Mode>('injection');
 
   return (
     <Screen>
       <Spacer size={spacing.md} />
-      <Caption color={colors.accent}>Log</Caption>
+      <Caption color={theme.color.primary}>Log</Caption>
       <Display style={{ marginTop: spacing.sm }}>Logger</Display>
       <Small style={{ marginTop: spacing.sm }}>
         Record what you actually did. Every number here is yours — the app never suggests a dose, it only does the
@@ -90,6 +91,8 @@ export default function LoggerScreen() {
 // ---------------------------------------------------------------------------
 
 function InjectionLogger() {
+  const theme = useTheme();
+  const { color } = theme;
   const router = useRouter();
   const injectionLogs = useAppStore((s) => s.injectionLogs);
   const logInjection = useAppStore((s) => s.logInjection);
@@ -254,10 +257,10 @@ function InjectionLogger() {
                   onPress={() => setDoseUnit(u)}
                   style={[
                     styles.unitPill,
-                    { backgroundColor: active ? colors.accentDim : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+                    { backgroundColor: active ? color.primarySoft : color.surfaceMuted, borderColor: active ? color.primary : color.border },
                   ]}
                 >
-                  <Text style={[styles.unitLabel, { color: active ? colors.accent : colors.textMuted }]}>
+                  <Text style={[styles.unitLabel, { color: active ? color.primary : color.textSecondary }]}>
                     {u === 'iu' ? 'IU' : u}
                   </Text>
                 </Pressable>
@@ -291,7 +294,7 @@ function InjectionLogger() {
       {/* When & where --------------------------------------------------------- */}
       <Section title="When & where" gap={spacing.lg}>
         <Row justify="space-between" align="center">
-          <Caption color={colors.textMuted}>Time</Caption>
+          <Caption color={color.textSecondary}>Time</Caption>
           <TextField
             value={time}
             onChangeText={setTime}
@@ -301,19 +304,19 @@ function InjectionLogger() {
         </Row>
 
         <View>
-          <Caption color={colors.textMuted}>Injection site</Caption>
+          <Caption color={color.textSecondary}>Injection site</Caption>
           <Small style={{ marginTop: spacing.xs }}>Tap where you injected. Left and right are your own.</Small>
           <Spacer size={spacing.md} />
           <BodyFigure value={site} onChange={setSite} />
           {site ? (
-            <Small style={{ textAlign: 'center', marginTop: spacing.sm, color: colors.text }}>
+            <Small style={{ textAlign: 'center', marginTop: spacing.sm, color: color.textPrimary }}>
               {INJECTION_SITE_LABELS[site]}
             </Small>
           ) : null}
         </View>
 
         <View>
-          <Caption color={colors.textMuted}>Pain level</Caption>
+          <Caption color={color.textSecondary}>Pain level</Caption>
           <Spacer size={spacing.sm} />
           <PainScale value={pain} onChange={setPain} />
         </View>
@@ -345,7 +348,7 @@ function InjectionLogger() {
                   detail={`${formatShort(log.date)} ${log.time} · ${INJECTION_SITE_LABELS[log.site]} · pain ${log.painLevel}/10`}
                   meta={
                     <Row gap={spacing.md}>
-                      <Data small color={colors.textMuted}>
+                      <Data small color={color.textSecondary}>
                         {formatDose(log.dose)}
                       </Data>
                       <Pressable
@@ -354,7 +357,7 @@ function InjectionLogger() {
                         hitSlop={8}
                         onPress={() => removeInjection(log.id)}
                       >
-                        <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
+                        <Text style={{ color: color.textTertiary, fontFamily: fonts.medium, fontSize: 15 }}>✕</Text>
                       </Pressable>
                     </Row>
                   }
@@ -370,6 +373,8 @@ function InjectionLogger() {
 
 /** 0–10 self-reported injection pain as a tap scale. */
 function PainScale({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <Row gap={spacing.xs} wrap>
       {Array.from({ length: 11 }, (_, n) => {
@@ -383,10 +388,10 @@ function PainScale({ value, onChange }: { value: number; onChange: (n: number) =
             onPress={() => onChange(n)}
             style={[
               styles.scaleDot,
-              { backgroundColor: active ? colors.accent : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+              { backgroundColor: active ? color.primary : color.surfaceMuted, borderColor: active ? color.primary : color.border },
             ]}
           >
-            <Text style={[styles.scaleLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
+            <Text style={[styles.scaleLabel, { color: active ? color.onPrimary : color.textSecondary }]}>{n}</Text>
           </Pressable>
         );
       })}
@@ -399,6 +404,8 @@ function PainScale({ value, onChange }: { value: number; onChange: (n: number) =
  * until the user taps one — there is no default (P&S sign-off, THEA-9).
  */
 function SeverityScale({ value, onChange }: { value: number | null; onChange: (n: number) => void }) {
+  const theme = useTheme();
+  const { color } = theme;
   return (
     <Row gap={spacing.xs} wrap>
       {Array.from({ length: SEVERITY_MAX - SEVERITY_MIN + 1 }, (_, i) => i + SEVERITY_MIN).map((n) => {
@@ -412,10 +419,10 @@ function SeverityScale({ value, onChange }: { value: number | null; onChange: (n
             onPress={() => onChange(n)}
             style={[
               styles.scaleDot,
-              { backgroundColor: active ? colors.accent : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+              { backgroundColor: active ? color.primary : color.surfaceMuted, borderColor: active ? color.primary : color.border },
             ]}
           >
-            <Text style={[styles.scaleLabel, { color: active ? colors.accentText : colors.textMuted }]}>{n}</Text>
+            <Text style={[styles.scaleLabel, { color: active ? color.onPrimary : color.textSecondary }]}>{n}</Text>
           </Pressable>
         );
       })}
@@ -430,6 +437,8 @@ function SeverityScale({ value, onChange }: { value: number | null; onChange: (n
 const SEVERITY_ROW_TONE: SeverityTone = 'high';
 
 function SideEffectLogger() {
+  const theme = useTheme();
+  const { color } = theme;
   const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
   const logSideEffects = useAppStore((s) => s.logSideEffects);
   const removeSideEffect = useAppStore((s) => s.removeSideEffect);
@@ -479,10 +488,10 @@ function SideEffectLogger() {
                   onPress={() => toggle(o.id)}
                   style={[
                     styles.symptomChip,
-                    { backgroundColor: active ? colors.accentDim : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+                    { backgroundColor: active ? color.primarySoft : color.surfaceMuted, borderColor: active ? color.primary : color.border },
                   ]}
                 >
-                  <Text style={[typography.small, { color: active ? colors.accent : colors.text }]}>{o.label}</Text>
+                  <Text style={[typography.small, { color: active ? color.primary : color.textPrimary }]}>{o.label}</Text>
                 </Pressable>
               );
             })}
@@ -529,7 +538,7 @@ function SideEffectLogger() {
                 tone={severityBand(log.severity) === 'severe' ? SEVERITY_ROW_TONE : undefined}
                 meta={
                   <Row gap={spacing.md}>
-                    <Data small color={colors.textMuted}>
+                    <Data small color={color.textSecondary}>
                       {log.severity}/10
                     </Data>
                     <Pressable
@@ -538,7 +547,7 @@ function SideEffectLogger() {
                       hitSlop={8}
                       onPress={() => removeSideEffect(log.id)}
                     >
-                      <Text style={{ color: colors.textFaint, fontFamily: fonts.sans, fontSize: 15 }}>✕</Text>
+                      <Text style={{ color: color.textTertiary, fontFamily: fonts.medium, fontSize: 15 }}>✕</Text>
                     </Pressable>
                   </Row>
                 }
@@ -558,6 +567,8 @@ function SideEffectLogger() {
  * equivalent form with its unit. It never originates a dose.
  */
 function ReconstitutionCalculator() {
+  const theme = useTheme();
+  const { color } = theme;
   const [vialMg, setVialMg] = useState('');
   const [bacMl, setBacMl] = useState('');
   const [doseValue, setDoseValue] = useState('');
@@ -603,7 +614,7 @@ function ReconstitutionCalculator() {
       ) : null}
 
       <Spacer size={spacing.md} />
-      <Caption color={colors.textFaint}>Your dose (optional — to see units to draw)</Caption>
+      <Caption color={color.textTertiary}>Your dose (optional — to see units to draw)</Caption>
       <Spacer size={spacing.xs} />
       <Row gap={spacing.sm} align="center">
         <TextField
@@ -624,10 +635,10 @@ function ReconstitutionCalculator() {
                 onPress={() => setDoseUnit(u)}
                 style={[
                   styles.unitPill,
-                  { backgroundColor: active ? colors.accentDim : colors.surfaceHigh, borderColor: active ? colors.accent : colors.border },
+                  { backgroundColor: active ? color.primarySoft : color.surfaceMuted, borderColor: active ? color.primary : color.border },
                 ]}
               >
-                <Text style={[styles.unitLabel, { color: active ? colors.accent : colors.textMuted }]}>{u}</Text>
+                <Text style={[styles.unitLabel, { color: active ? color.primary : color.textSecondary }]}>{u}</Text>
               </Pressable>
             );
           })}
@@ -660,7 +671,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   unitLabel: {
-    fontFamily: fonts.sansMedium,
+    fontFamily: fonts.medium,
     fontSize: 13,
   },
   symptomChip: {
@@ -678,7 +689,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   scaleLabel: {
-    fontFamily: fonts.mono,
+    fontFamily: fonts.medium,
     fontSize: 14,
   },
 });
