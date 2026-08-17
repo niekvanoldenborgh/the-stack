@@ -86,15 +86,18 @@ ready for those screens' `EmptyState` call sites once that work lands.
 
 ## Fonts
 
-- **Inter** (400/600/700) — sans body/heading face, replacing Bricolage
-  Grotesque + IBM Plex Sans as of THEA-56 direction A.
+- **Inter** (400/500/600/700/800) — the only sans face, used for both body
+  and heading, replacing Bricolage Grotesque + IBM Plex Sans as of THEA-56
+  direction A. THEA-69 (PULSE) added the 500 and 800 weights on top of the
+  400/600/700 THEA-56 shipped with.
   - **Source:** https://rsms.me/inter via the `@expo-google-fonts/inter`
     npm package.
   - **License:** SIL Open Font License 1.1 — free for commercial use, no
     attribution required. Licence text ships in
     `node_modules/@expo-google-fonts/inter/LICENSE_FONT`.
   - **Attribution status:** none required; none given.
-- **IBM Plex Mono** — unchanged by this pass. Still the only mono face,
-  used for quantities/units (see AGENTS.md for the per-weight import rule).
+- **IBM Plex Mono** — retired by THEA-69 (PULSE). Quantities/units now use
+  Inter with `fontVariant: ['tabular-nums']` instead of a separate mono
+  face — see `src/ui/theme.ts`. No longer imported in `app/_layout.tsx`.
 - **Bricolage Grotesque** — fully removed by THEA-56 direction A; no
   longer shipped or imported.
