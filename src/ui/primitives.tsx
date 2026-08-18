@@ -1,10 +1,19 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, Clock, X } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
-import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { Circle, Svg } from 'react-native-svg';
 
 import { Caption, Row, Small } from './components';
-import { radius, spacing, typography, useTheme, type Elevation, type SeverityTone } from './theme';
+import { fonts, radius, spacing, typography, useTheme, type Elevation, type SeverityTone } from './theme';
 
 /**
  * Redesign primitives (THEA-38, retinted for PULSE — THEA-69).
@@ -273,5 +282,378 @@ export function ListItem({
         </View>
       </Row>
     </Wrapper>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PULSE v2 structural primitives (pulse-design-spec-v2, THEA-69 rebuild).
+//
+// The five above predate the KIMI reference and stay in place. Everything
+// below fills the gaps that spec identified between them and KIMI's actual
+// shapes — a header avatar, a ring stat, a paired duo row, a checklist row
+// with a 3-state trailing mark, sheet chrome, a hero numeric input, and a
+// floating primary action. All theme-driven via `useTheme()`; no literal hex.
+// ---------------------------------------------------------------------------
+
+/**
+ * Circular gradient initials badge — spec-v2 §3.1. Uses `avatarGradient`,
+ * never `accentGradient`: the hero gradient's 3 stops read muddy at this
+ * size, which is exactly why the spec gave avatars their own token.
+ */
+export function Avatar({
+  initials,
+  icon,
+  size = 44,
+}: {
+  /** Ignored when `icon` is passed. `UserProfile` has no display-name field
+   *  today (spec-v2 §4.1/§8.2) — pass `icon` for the generic-mark fallback
+   *  rather than inventing initials from nothing. */
+  initials?: string;
+  icon?: ReactNode;
+  size?: number;
+}) {
+  const theme = useTheme();
+  return (
+    <LinearGradient
+      colors={theme.color.avatarGradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[
+        { width: size, height: size, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+        theme.shadow(1),
+      ]}
+    >
+      {icon ?? (
+        <Text style={[typography.bodyStrong, { color: theme.color.onPrimary, fontSize: size * 0.36 }]}>
+          {initials}
+        </Text>
+      )}
+    </LinearGradient>
+  );
+}
+
+/**
+ * Small glowing status dot for the hero countdown row — spec-v2 §3.2. Fixed
+ * on-gradient shadow, not an animation, so it needs no `useNativeDriver`
+ * gate.
+ */
+export function PulseDot({ size = 7 }: { size?: number }) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: theme.color.heroAccent,
+        shadowColor: theme.color.heroAccent,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 4,
+      }}
+    />
+  );
+}
+
+/**
+ * Circular progress ring — spec-v2 §3.3. `react-native-svg` is already a
+ * dependency (illustrations.tsx); no new package.
+ */
+export function StatRing({ pct, size = 54 }: { pct: number; size?: number }) {
+  const theme = useTheme();
+  const strokeWidth = 5;
+  const r = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, pct));
+  const center = size / 2;
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size}>
+        <Circle cx={center} cy={center} r={r} stroke={theme.color.surfaceMuted} strokeWidth={strokeWidth} fill="none" />
+        <Circle
+          cx={center}
+          cy={center}
+          r={r}
+          stroke={theme.color.primary}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={circumference * (1 - clamped / 100)}
+          fill="none"
+          transform={`rotate(-90 ${center} ${center})`}
+        />
+      </Svg>
+      <Text
+        style={[
+          typography.dataSmall,
+          { position: 'absolute', fontFamily: fonts.bold, fontSize: 13, color: theme.color.textPrimary },
+        ]}
+      >
+        {`${Math.round(clamped)}%`}
+      </Text>
+    </View>
+  );
+}
+
+/** Wraps two `StatCard`s side by side — spec-v2 §3.4. Each child should be a
+ *  `StatCard`; the row just supplies the gap and equal-flex layout. */
+export function DuoRow({ children }: { children: ReactNode }) {
+  return (
+    <Row gap={spacing.md} align="stretch">
+      {children}
+    </Row>
+  );
+}
+
+/**
+ * One card in a `DuoRow` — spec-v2 §3.4. A narrower, KIMI-specific sibling to
+ * `StatTile`: `StatTile` keeps its existing call sites (Results etc.) as-is.
+ * Pass either `value` (a plain big number/string) or `ring` (a percentage,
+ * rendered as a `StatRing`) — not both.
+ */
+export function StatCard({
+  label,
+  value,
+  ring,
+  hint,
+  style,
+}: {
+  label: string;
+  value?: string;
+  ring?: number;
+  hint?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      style={[
+        // 22px is KIMI's own radius — nearest existing step is radius.lg
+        // (20); used as a one-off override rather than a new radius step for
+        // one shape (spec-v2 §3.4).
+        { flex: 1, borderRadius: 22, padding: spacing.lg, backgroundColor: theme.color.surface },
+        theme.shadow(1),
+        style,
+      ]}
+    >
+      <Caption>{label}</Caption>
+      <View style={{ marginTop: spacing.sm }}>
+        {ring !== undefined ? (
+          <StatRing pct={ring} />
+        ) : (
+          <Text style={[typography.statBig, { color: theme.color.textPrimary }]}>{value}</Text>
+        )}
+      </View>
+      {hint ? <Small style={{ marginTop: spacing.xs }}>{hint}</Small> : null}
+    </View>
+  );
+}
+
+/**
+ * Dose-checklist row — spec-v2 §3.5. Replaces `ListItem` specifically for
+ * this shape: a fixed-width leading time column and a 3-state trailing mark
+ * don't fit `ListItem`'s icon+title anatomy.
+ */
+export function DoseRow({
+  time,
+  name,
+  detail,
+  status,
+  onPress,
+}: {
+  /** e.g. "08:00" — fixed-width leading column. */
+  time: string;
+  name: string;
+  detail: string;
+  status: 'done' | 'next' | 'todo';
+  onPress?: () => void;
+}) {
+  const theme = useTheme();
+  const { color } = theme;
+  const Wrapper = onPress ? Pressable : View;
+  const mark =
+    status === 'done'
+      ? { bg: color.successSoft, icon: <Check size={14} color={color.success} /> }
+      : status === 'next'
+        ? { bg: color.primarySoft, icon: <Clock size={14} color={color.primary} /> }
+        : { bg: 'transparent', icon: null };
+
+  return (
+    <Wrapper
+      {...(onPress ? { accessibilityRole: 'button' as const, onPress } : {})}
+      style={onPress ? ({ pressed }: { pressed: boolean }) => ({ opacity: pressed ? 0.7 : 1 }) : undefined}
+    >
+      <Row align="center" gap={spacing.md}>
+        <View style={{ width: 52 }}>
+          <Caption style={{ color: color.textSecondary }}>{time}</Caption>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[typography.bodyStrong, { color: color.textPrimary }]}>{name}</Text>
+          <Small style={{ marginTop: 2 }}>{detail}</Small>
+        </View>
+        <View
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 13,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: mark.bg,
+            borderWidth: status === 'todo' ? 2 : 0,
+            borderColor: color.border,
+          }}
+        >
+          {mark.icon}
+        </View>
+      </Row>
+    </Wrapper>
+  );
+}
+
+/** Title + circular close button — spec-v2 §3.6. Top chrome for any
+ *  screen/sheet/modal that needs a dismiss affordance. `onClose` is optional
+ *  so a screen can use just the title half (e.g. Logger, which stays a tab —
+ *  §5.1). */
+export function SheetHeader({ title, onClose, closeLabel = 'Close' }: { title: string; onClose?: () => void; closeLabel?: string }) {
+  const theme = useTheme();
+  const { color } = theme;
+  return (
+    <Row justify="space-between" align="center" style={{ marginBottom: spacing.lg }}>
+      <Text style={[typography.title, { fontFamily: fonts.displayBold, color: color.textPrimary }]}>{title}</Text>
+      {onClose ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={closeLabel}
+          hitSlop={8}
+          onPress={onClose}
+          style={({ pressed }) => ({
+            width: 34,
+            height: 34,
+            borderRadius: radius.pill,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: color.surfaceMuted,
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <X size={16} color={color.textSecondary} />
+        </Pressable>
+      ) : null}
+    </Row>
+  );
+}
+
+/**
+ * Oversized numeric input with an inline unit switcher — spec-v2 §3.8. For
+ * the single focal number a screen is about (Logger's injected dose); every
+ * other numeric field stays a normal `TextField`.
+ */
+export function BigNumberField({
+  label,
+  value,
+  onChangeText,
+  units,
+  unit,
+  onUnitChange,
+  placeholder = '0',
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  units: string[];
+  unit: string | null;
+  onUnitChange: (next: string) => void;
+  placeholder?: string;
+}) {
+  const theme = useTheme();
+  const { color } = theme;
+  return (
+    <View style={[{ borderRadius: radius.xl, padding: spacing.xl, gap: spacing.md, backgroundColor: color.surface }, theme.shadow(1)]}>
+      <Caption>{label}</Caption>
+      <Row justify="space-between" align="center" gap={spacing.sm}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType="decimal-pad"
+          placeholder={placeholder}
+          placeholderTextColor={color.textTertiary}
+          style={{ flex: 1, fontFamily: fonts.displayBold, fontSize: 46, letterSpacing: -1.38, color: color.textPrimary }}
+        />
+        <Row gap={2} style={{ backgroundColor: color.surfaceSunken, borderRadius: radius.pill, padding: 3 }}>
+          {units.map((u) => {
+            const active = u === unit;
+            return (
+              <Pressable
+                key={u}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => onUnitChange(u)}
+                style={[
+                  { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
+                  active ? [{ backgroundColor: color.surface }, theme.shadow(1)] : null,
+                ]}
+              >
+                <Text style={[typography.small, { fontFamily: fonts.semibold, color: active ? color.primary : color.textSecondary }]}>
+                  {u === 'iu' ? 'IU' : u}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </Row>
+      </Row>
+    </View>
+  );
+}
+
+/**
+ * Bottom-fixed primary action — spec-v2 §3.10. Only for the single primary
+ * commit action on a tab screen (the tab bar is still showing); pushed/modal
+ * screens keep an inline `Button` at the end of scroll content instead (§6).
+ */
+export function FloatingCTA({
+  label,
+  onPress,
+  disabled = false,
+  loading = false,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const theme = useTheme();
+  const { color } = theme;
+  const isDisabled = disabled || loading;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: isDisabled }}
+      onPress={isDisabled ? undefined : onPress}
+      style={({ pressed }) => [
+        {
+          position: 'absolute',
+          // 92 clears the 64-tall floating tab bar + its 14px inset + a
+          // little breathing room (spec-v2 §3.10).
+          bottom: 92,
+          left: 20,
+          right: 20,
+          borderRadius: radius.lg,
+          paddingVertical: 16,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: isDisabled ? color.disabled : color.textPrimary,
+        },
+        !isDisabled ? theme.shadow(2) : null,
+        { opacity: isDisabled ? 1 : pressed ? 0.85 : 1 },
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={color.background} />
+      ) : (
+        <Text style={[typography.bodyStrong, { color: isDisabled ? color.disabledContent : color.background }]}>
+          {label}
+        </Text>
+      )}
+    </Pressable>
   );
 }

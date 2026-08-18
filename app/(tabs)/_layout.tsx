@@ -1,15 +1,11 @@
 import { Tabs } from 'expo-router';
 import { Calendar, House, SquarePlus, Settings, TrendingUp } from 'lucide-react-native';
 
-import { fonts, typography, useTheme } from '../../src/ui/theme';
+import { fonts, radius, typography, useTheme, withOpacity } from '../../src/ui/theme';
 
 export default function TabsLayout() {
   const theme = useTheme();
   const { color } = theme;
-  // Floating/elevated feel (design spec §3.7): no top border, a soft shadow
-  // instead. `theme.shadow(2)` is the "raised" tier's shadow only, without
-  // pulling in its `surfaceElevated` background — the bar stays on `surface`.
-  const barShadow = theme.shadow(2);
 
   return (
     <Tabs
@@ -19,11 +15,27 @@ export default function TabsLayout() {
         headerTitleStyle: typography.heading,
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: color.background },
+        // Floating inset pill (spec-v2 §3.9), not an edge-to-edge docked bar.
+        // KIMI uses `backdrop-filter: blur(12px)` behind the bar — no literal
+        // RN equivalent (AGENTS.md), and `expo-blur` would be a second
+        // unplanned native module this redesign cycle (THEA-45 already added
+        // one). Solid translucent fallback instead; reversible later if the
+        // owner specifically wants the blur.
         tabBarStyle: {
-          backgroundColor: color.surface,
+          position: 'absolute',
+          left: 14,
+          right: 14,
+          bottom: 14,
+          height: 64,
+          borderRadius: radius.xl,
+          backgroundColor: withOpacity(color.surface, 0.92),
           borderTopWidth: 0,
-          ...barShadow,
+          paddingBottom: 0,
+          paddingTop: 0,
+          // Hero-tier shadow reads closest to KIMI's 0 12px 32px -8px.
+          ...theme.shadow(3),
         },
+        tabBarItemStyle: { paddingVertical: 6 },
         tabBarActiveTintColor: color.primary,
         tabBarInactiveTintColor: color.textSecondary,
         tabBarLabelStyle: { fontSize: 11, fontFamily: fonts.medium },

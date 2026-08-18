@@ -1,15 +1,22 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { User } from 'lucide-react-native';
+import { useMemo } from 'react';
 import { View } from 'react-native';
 
 import { METRIC_BY_ID } from '../../src/domain/metrics';
 import { getPeptide } from '../../src/domain/peptides';
 import type { DoseLog, GoalTarget, InjectionLog, Measurement, PhaseKind, Stack } from '../../src/domain/types';
-import { buildCyclePhases, cyclePlanProgressPct, groupPhasesByPeptide, summariseCycle } from '../../src/engine/cycle';
+import {
+  buildCyclePhases,
+  cyclePlanProgressPct,
+  generateSchedule,
+  groupPhasesByPeptide,
+  summariseCycle,
+} from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import { formatMetricValue, goalTargetProgressPct, summariseMeasurements } from '../../src/engine/progress';
-import { relativeLabel, timeToMinutes, today } from '../../src/lib/date';
-import { useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
+import { addDays, relativeLabel, timeToMinutes, today, WEEKDAY_LABELS, weekdayIndex, formatShort } from '../../src/lib/date';
+import { selectAdherence, useActiveStack, useAppStore, useUpcomingDoses } from '../../src/store/useAppStore';
 import {
   Badge,
   Button,
@@ -25,33 +32,31 @@ import {
   Spacer,
 } from '../../src/ui/components';
 import { RouteIcon } from '../../src/ui/icons';
-import { FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
+import { Avatar, DoseRow, DuoRow, FocalMetric, List, ListItem, PulseDot, Section, StatCard } from '../../src/ui/primitives';
 import { spacing, useTheme, type SeverityTone } from '../../src/ui/theme';
 
 /**
- * Summary (page 1) — THEA-8, redesigned THEA-38, THEA-40, THEA-49.
+ * Summary (page 1) — THEA-8, redesigned THEA-38/40/49, rebuilt to
+ * pulse-design-spec-v2 §4 (THEA-69 v2).
  *
- * One focal block — the next scheduled injection — carries the top of the
- * screen; everything else (today's to-do list, current stack) steps down
- * into borderless, tone-shifted sections below it. The old four-equal-cards
- * layout and its up/down reorder toggle are gone: this is a fixed hierarchy
- * now, not a shelf of homogeneous widgets.
+ * Order (top to bottom), matching KIMI's reference screen A: header row
+ * (date + greeting + avatar) → hero card (next injection, countdown, white
+ * CTA) → duo row (adherence ring, active compounds) → today's injections
+ * checklist → current stack → goal progress. The old four-equal-cards shelf
+ * is gone; hierarchy comes from scale and card shape, not a uniform stack of
+ * identical panels.
  *
- * This screen answers "what's next"; "how am I doing" (adherence, active
- * compounds, injections logged, the per-goal measurements) now lives on
- * Results instead — it used to be duplicated as an Overview block here too
- * (THEA-40 consolidation). The one deliberate exception is `GoalProgressSection`
- * below: owner feedback (THEA-40 round 2) asked for a glanceable progress
- * infographic here too, alongside the cycle progress bar. It surfaces only
- * the single target the user set on Results, not a dashboard — the target
- * number is entirely theirs, same as everywhere else in this app.
- *
- * `TodayInjectionsSection` replaces the old "estimated medication levels"
- * block (THEA-6, THEA-49): a plain checklist of today's schedule, ticked
- * strictly by whether a matching log exists — see `isLoggedToday` below.
- * The PK levels engine (`src/engine/pk.ts`) is untouched and still tested;
- * this screen just no longer renders it.
+ * `TodayInjectionsSection` still ticks a row strictly by whether a matching
+ * log exists for today (see `countLoggedToday` below) — that derivation is
+ * unchanged from v1, just rendered through `DoseRow` now instead of
+ * `ListItem`.
  */
+
+function greetingForHour(hour: number): string {
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export default function SummaryScreen() {
   const router = useRouter();
@@ -64,6 +69,13 @@ export default function SummaryScreen() {
   const measurements = useAppStore((s) => s.measurements);
   const settings = useAppStore((s) => s.settings);
   const upcomingDoses = useUpcomingDoses(14);
+
+  const adherencePct = useMemo(() => {
+    if (!stack) return null;
+    const doses = generateSchedule(stack, addDays(today(), -13), today());
+    const { pct, taken, skipped } = selectAdherence(doses, doseLogs);
+    return taken + skipped === 0 ? null : pct;
+  }, [stack, doseLogs]);
 
   if (!profile) {
     return (
@@ -83,8 +95,7 @@ export default function SummaryScreen() {
   return (
     <Screen>
       <Spacer size={spacing.lg} />
-      <Caption color={color.primary}>Today</Caption>
-      <Display style={{ marginTop: spacing.sm, marginBottom: spacing.xl }}>Summary</Display>
+      <HeaderRow />
 
       <NextInjectionSection
         upcomingDoses={upcomingDoses}
@@ -92,24 +103,50 @@ export default function SummaryScreen() {
         alarmOffsetsMin={settings.alarmOffsetsMin}
         remindersEnabled={settings.remindersEnabled}
         onOpenAlarmSettings={() => router.push('/settings/alarm')}
+        onLogInjection={() => router.push('/logger')}
       />
 
-      <GoalProgressSection target={profile.goalTarget} measurements={measurements} />
+      <DuoRow>
+        <StatCard label="Adherence · 14d" ring={adherencePct ?? 0} hint={adherencePct === null ? 'No doses logged yet' : undefined} />
+        <StatCard label="Active compounds" value={`${stack?.items.length ?? 0}`} />
+      </DuoRow>
+      <Spacer size={spacing.xl} />
 
       <TodayInjectionsSection upcomingDoses={upcomingDoses} injectionLogs={injectionLogs} />
 
-      <StackSection
-        stack={stack}
-        last
-        onBuildStack={() => router.push('/builder')}
-        onOpenPeptide={(id2) => router.push(`/peptide/${id2}`)}
-      />
+      <StackSection stack={stack} onBuildStack={() => router.push('/builder')} onOpenPeptide={(id2) => router.push(`/peptide/${id2}`)} />
+
+      <GoalProgressSection target={profile.goalTarget} measurements={measurements} last />
     </Screen>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Next injection — the focal block
+// Header row — date + greeting + avatar (spec-v2 §4.1)
+// ---------------------------------------------------------------------------
+
+function HeaderRow() {
+  const theme = useTheme();
+  const { color } = theme;
+  // `UserProfile` carries no display-name field today — a neutral, time-based
+  // greeting and a generic avatar mark rather than inventing one (spec-v2
+  // §4.1/§8.2; that's a product decision, not this rebuild's to make).
+  const greeting = greetingForHour(new Date().getHours());
+  const dateLabel = `${WEEKDAY_LABELS[weekdayIndex(today())]} ${formatShort(today())}`;
+
+  return (
+    <Row justify="space-between" align="center" style={{ marginBottom: spacing.xl }}>
+      <View>
+        <Caption color={color.textSecondary}>{dateLabel}</Caption>
+        <Display style={{ fontSize: 26, lineHeight: 32, marginTop: spacing.xs }}>{greeting}</Display>
+      </View>
+      <Avatar icon={<User size={20} color={color.onPrimary} strokeWidth={2} />} />
+    </Row>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Next injection — the hero block
 // ---------------------------------------------------------------------------
 
 /** Mirrors app/settings/alarm.tsx's offset phrasing, so the two screens read the same. */
@@ -139,12 +176,14 @@ function NextInjectionSection({
   alarmOffsetsMin,
   remindersEnabled,
   onOpenAlarmSettings,
+  onLogInjection,
 }: {
   upcomingDoses: ReturnType<typeof useUpcomingDoses>;
   doseLogs: Record<string, DoseLog>;
   alarmOffsetsMin: number[];
   remindersEnabled: boolean;
   onOpenAlarmSettings: () => void;
+  onLogInjection: () => void;
 }) {
   const theme = useTheme();
   const { color } = theme;
@@ -161,6 +200,7 @@ function NextInjectionSection({
 
   const peptide = getPeptide(next.peptideId);
   const sortedOffsets = [...alarmOffsetsMin].sort((a, b) => b - a);
+  const firstOffset = sortedOffsets[0];
 
   return (
     <Section tone={3} gradient gap={spacing.lg}>
@@ -177,10 +217,13 @@ function NextInjectionSection({
         sortedOffsets.length > 0 ? (
           <View style={{ gap: spacing.sm }}>
             {sortedOffsets.map((min) => (
-              <Row key={min} justify="space-between">
-                <Small muted={false} style={{ color: color.onPrimary }}>
-                  {offsetLabel(min)}
-                </Small>
+              <Row key={min} justify="space-between" gap={spacing.sm}>
+                <Row gap={spacing.sm}>
+                  {min === firstOffset ? <PulseDot /> : <View style={{ width: 7 }} />}
+                  <Small muted={false} style={{ color: color.onPrimary }}>
+                    {offsetLabel(min)}
+                  </Small>
+                </Row>
                 <Data small color={color.onPrimary}>
                   {subtractMinutes(next.time, min)}
                 </Data>
@@ -196,6 +239,8 @@ function NextInjectionSection({
           <Button label="Open alarm settings" variant="secondary" onPress={onOpenAlarmSettings} style={{ marginTop: spacing.md }} />
         </View>
       )}
+
+      <Button label="Log this injection" onPress={onLogInjection} variant="onGradient" />
     </Section>
   );
 }
@@ -204,7 +249,7 @@ function NextInjectionSection({
 // Goal progress — the target the user set on Results, if any (THEA-40 round 2)
 // ---------------------------------------------------------------------------
 
-function GoalProgressSection({ target, measurements }: { target?: GoalTarget; measurements: Measurement[] }) {
+function GoalProgressSection({ target, measurements, last }: { target?: GoalTarget; measurements: Measurement[]; last?: boolean }) {
   const theme = useTheme();
   const { color } = theme;
   const pct = useMemo(() => {
@@ -220,7 +265,7 @@ function GoalProgressSection({ target, measurements }: { target?: GoalTarget; me
   const label = (metric?.label ?? 'tracked measure').toLowerCase();
 
   return (
-    <Section title="Goal progress">
+    <Section title="Goal progress" last={last}>
       <ProgressBar value={pct} tone="accent" />
       <Caption color={color.textTertiary} style={{ marginTop: spacing.xs }}>
         {`${Math.round(pct)}% of the way to your ${label} target · ${targetLabel}`}
@@ -230,7 +275,7 @@ function GoalProgressSection({ target, measurements }: { target?: GoalTarget; me
 }
 
 // ---------------------------------------------------------------------------
-// Today's injections — THEA-49
+// Today's injections — THEA-49, rendered as DoseRow (spec-v2 §3.5/§4.4)
 // ---------------------------------------------------------------------------
 
 /**
@@ -242,7 +287,7 @@ function GoalProgressSection({ target, measurements }: { target?: GoalTarget; me
  * only once N logs exist for that peptide today (P&S review, THEA-49) —
  * still plain equality on peptideId + same-day date, no fuzzy time-window
  * or dose-size heuristic. Ticking is a statement of fact ("you logged
- * this"), not a to-do the user can fake, so `ListItem` gets no `onPress`
+ * this"), not a to-do the user can fake, so `DoseRow` gets no `onPress`
  * here.
  */
 function countLoggedToday(peptideId: string, injectionLogs: InjectionLog[], todayISO: string): number {
@@ -264,11 +309,22 @@ function TodayInjectionsSection({
     // a peptide's rows seen so far as we walk this list is its index among
     // that peptide's scheduled slots today.
     const seenByPeptide: Record<string, number> = {};
-    return todaysDoses.map((dose) => {
+    const withLogged = todaysDoses.map((dose) => {
       const indexForPeptide = seenByPeptide[dose.peptideId] ?? 0;
       seenByPeptide[dose.peptideId] = indexForPeptide + 1;
       const loggedCount = countLoggedToday(dose.peptideId, injectionLogs, todayISO);
       return { dose, logged: indexForPeptide < loggedCount };
+    });
+    // First unlogged row reads as "next"; every other unlogged row is "todo".
+    // Pure derivation from data already computed above — no new domain logic.
+    let nextAssigned = false;
+    return withLogged.map((row) => {
+      if (row.logged) return { ...row, status: 'done' as const };
+      if (!nextAssigned) {
+        nextAssigned = true;
+        return { ...row, status: 'next' as const };
+      }
+      return { ...row, status: 'todo' as const };
     });
   }, [upcomingDoses, injectionLogs, todayISO]);
 
@@ -283,14 +339,15 @@ function TodayInjectionsSection({
   return (
     <Section title="Today's injections">
       <List>
-        {rows.map(({ dose, logged }) => {
+        {rows.map(({ dose, status }) => {
           const peptide = getPeptide(dose.peptideId);
           return (
-            <ListItem
+            <DoseRow
               key={dose.id}
-              title={peptide?.name ?? dose.peptideId}
-              detail={`${formatDose(dose.dose)} · ${dose.time}`}
-              checked={logged}
+              time={dose.time}
+              name={peptide?.name ?? dose.peptideId}
+              detail={formatDose(dose.dose)}
+              status={status}
             />
           );
         })}
@@ -343,12 +400,10 @@ function CycleProgress({ pct, caption }: { pct: number; caption: string }) {
 
 function StackSection({
   stack,
-  last,
   onBuildStack,
   onOpenPeptide,
 }: {
   stack: Stack | null;
-  last?: boolean;
   onBuildStack: () => void;
   onOpenPeptide: (peptideId: string) => void;
 }) {
@@ -368,7 +423,7 @@ function StackSection({
 
   if (!stack) {
     return (
-      <Section title="Current stack" last={last}>
+      <Section title="Current stack">
         <EmptyState
           title="No active stack"
           body="Build a stack to see it summarised here."
@@ -380,7 +435,7 @@ function StackSection({
   }
 
   return (
-    <Section title="Current stack" last={last}>
+    <Section title="Current stack">
       <List>
         {stack.items.map((item) => {
           const peptide = getPeptide(item.peptideId);

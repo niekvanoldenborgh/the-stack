@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getPeptide } from '../../src/domain/peptides';
@@ -15,7 +15,6 @@ import {
   Callout,
   Caption,
   Data,
-  Display,
   EmptyState,
   Row,
   Screen,
@@ -23,20 +22,25 @@ import {
   Spacer,
   TextField,
 } from '../../src/ui/components';
-import { List, ListItem, Section } from '../../src/ui/primitives';
+import { BigNumberField, FloatingCTA, List, ListItem, Section, SheetHeader } from '../../src/ui/primitives';
 import { Segmented } from '../../src/ui/schedule';
 import { fonts, radius, spacing, useTheme, type SeverityTone, typography } from '../../src/ui/theme';
 
 /**
- * Logger, redesigned THEA-40.
+ * Logger, redesigned THEA-40, rebuilt to pulse-design-spec-v2 §5 (THEA-69 v2).
  *
- * The old layout was six-odd flat blocks separated by `SectionTitle` labels
- * with no grouping beneath them — every field read at the same visual
- * weight, whether it was "pick a compound" or "optional note". Related
- * fields now share one `Section` panel (compound, dose, when-and-where,
- * notes) so the screen reads as four decisions instead of a dozen
- * ungrouped inputs, and both history lists use `List`/`ListItem` instead of
- * the old bordered `ListRow`.
+ * KIMI's reference frames this screen as a modal sheet with a close X, but
+ * Logger stays a tab here rather than becoming a pushed sheet — that's a
+ * navigation-structure change out of scope for this spec (§5.1). The
+ * `SheetHeader` close button is kept anyway as a "done" affordance back to
+ * Summary; it reads as intentional rather than a missing feature.
+ *
+ * The primary save action is now a `FloatingCTA` instead of an inline
+ * `Button` inside the last section — `canSave`/`save` still live inside
+ * `InjectionLogger`/`SideEffectLogger` (unchanged logic), and are surfaced up
+ * to this screen's floating action via `onCtaChange` so the CTA can render
+ * outside the scroll view (`Screen`'s `floatingAction` prop) while staying in
+ * sync with whichever mode is active.
  *
  * None of the underlying logic changed: every safety comment below (no
  * default unit, no default severity, warn-never-block on an over-max dose)
@@ -53,6 +57,12 @@ const MODES: { key: Mode; label: string }[] = [
 /** Units a user can log an injection in. `pct` is topical-only, so excluded. */
 const DOSE_UNITS: DoseUnit[] = ['mcg', 'mg', 'iu'];
 
+interface CtaState {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}
+
 function nowHHmm(): string {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -63,25 +73,35 @@ function parseNumber(text: string): number {
 }
 
 export default function LoggerScreen() {
-  const theme = useTheme();
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>('injection');
+  const [cta, setCta] = useState<CtaState | null>(null);
 
   return (
-    <Screen>
+    <Screen
+      floatingAction={
+        cta ? <FloatingCTA label={cta.label} disabled={cta.disabled} onPress={cta.onPress} /> : null
+      }
+    >
       <Spacer size={spacing.md} />
-      <Caption color={theme.color.primary}>Log</Caption>
-      <Display style={{ marginTop: spacing.sm }}>Logger</Display>
-      <Small style={{ marginTop: spacing.sm }}>
+      <SheetHeader title="Logger" onClose={() => router.push('/(tabs)')} closeLabel="Done" />
+      <Small>
         Record what you actually did. Every number here is yours — the app never suggests a dose, it only does the
         arithmetic on what you type.
       </Small>
       <Spacer size={spacing.xl} />
 
-      <Segmented options={MODES.map((m) => ({ value: m.key, label: m.label }))} value={mode} onChange={setMode} />
+      <Segmented
+        options={MODES.map((m) => ({ value: m.key, label: m.label }))}
+        value={mode}
+        onChange={setMode}
+        tone="ink"
+        fill={false}
+      />
 
       <Spacer size={spacing.xl} />
 
-      {mode === 'injection' ? <InjectionLogger /> : <SideEffectLogger />}
+      {mode === 'injection' ? <InjectionLogger onCtaChange={setCta} /> : <SideEffectLogger onCtaChange={setCta} />}
     </Screen>
   );
 }
@@ -90,7 +110,7 @@ export default function LoggerScreen() {
 // Injection logger
 // ---------------------------------------------------------------------------
 
-function InjectionLogger() {
+function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void }) {
   const theme = useTheme();
   const { color } = theme;
   const router = useRouter();
@@ -182,7 +202,7 @@ function InjectionLogger() {
     setNote('');
   };
 
-  const save = () => {
+  const save = useCallback(() => {
     if (!canSave || !peptideId || !site || !doseUnit) return;
     const dose: Dose = { value: doseNum, unit: doseUnit };
     logInjection({
@@ -196,7 +216,12 @@ function InjectionLogger() {
       note: note.trim() || undefined,
     });
     reset();
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSave, peptideId, site, doseUnit, doseNum, drawnNum, time, pain, note, logInjection]);
+
+  useEffect(() => {
+    onCtaChange({ label: 'Log injection', disabled: !canSave, onPress: save });
+  }, [canSave, save, onCtaChange]);
 
   return (
     <View>
@@ -237,37 +262,15 @@ function InjectionLogger() {
       </Section>
 
       {/* Dose — user entered -------------------------------------------------- */}
-      <Section title="Dose you injected" gap={spacing.md}>
-        <Row gap={spacing.sm} align="center">
-          <TextField
-            value={doseValue}
-            onChangeText={setDoseValue}
-            keyboardType="decimal-pad"
-            placeholder="0"
-            style={{ flex: 1 }}
-          />
-          <Row gap={spacing.xs}>
-            {DOSE_UNITS.map((u) => {
-              const active = u === doseUnit;
-              return (
-                <Pressable
-                  key={u}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => setDoseUnit(u)}
-                  style={[
-                    styles.unitPill,
-                    { backgroundColor: active ? color.primarySoft : color.surfaceMuted, borderColor: active ? color.primary : color.border },
-                  ]}
-                >
-                  <Text style={[styles.unitLabel, { color: active ? color.primary : color.textSecondary }]}>
-                    {u === 'iu' ? 'IU' : u}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </Row>
-        </Row>
+      <View style={{ marginBottom: spacing.xxl, gap: spacing.md }}>
+        <BigNumberField
+          label="Dose you injected"
+          value={doseValue}
+          onChangeText={setDoseValue}
+          units={DOSE_UNITS}
+          unit={doseUnit}
+          onUnitChange={(u) => setDoseUnit(u as DoseUnit)}
+        />
         {unitMismatch && selectedPeptide ? (
           <Callout tone="moderate">
             {`Double-check the unit — ${selectedPeptide.name} is normally dosed in ${
@@ -289,7 +292,7 @@ function InjectionLogger() {
           keyboardType="decimal-pad"
           placeholder="e.g. 10"
         />
-      </Section>
+      </View>
 
       {/* When & where --------------------------------------------------------- */}
       <Section title="When & where" gap={spacing.lg}>
@@ -309,9 +312,20 @@ function InjectionLogger() {
           <Spacer size={spacing.md} />
           <BodyFigure value={site} onChange={setSite} />
           {site ? (
-            <Small style={{ textAlign: 'center', marginTop: spacing.sm, color: color.textPrimary }}>
-              {INJECTION_SITE_LABELS[site]}
-            </Small>
+            <View
+              style={{
+                alignSelf: 'center',
+                marginTop: spacing.sm,
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.xs,
+                borderRadius: radius.pill,
+                backgroundColor: color.primarySoft,
+              }}
+            >
+              <Small muted={false} style={{ color: color.primary }}>
+                {INJECTION_SITE_LABELS[site]}
+              </Small>
+            </View>
           ) : null}
         </View>
 
@@ -322,7 +336,7 @@ function InjectionLogger() {
         </View>
       </Section>
 
-      {/* Notes + save ----------------------------------------------------------- */}
+      {/* Notes ------------------------------------------------------------------ */}
       <Section title="Notes" gap={spacing.md}>
         <TextField
           value={note}
@@ -330,7 +344,6 @@ function InjectionLogger() {
           placeholder="Anything worth remembering (optional)"
           multiline
         />
-        <Button label="Log injection" onPress={save} disabled={!canSave} />
       </Section>
 
       {/* History -------------------------------------------------------------- */}
@@ -371,12 +384,13 @@ function InjectionLogger() {
   );
 }
 
-/** 0–10 self-reported injection pain as a tap scale. */
+/** 0–10 self-reported injection pain as a tap scale — flattened, full-width
+ *  equal-flex tiles (spec-v2 §5.5), no wrap. */
 function PainScale({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   const theme = useTheme();
   const { color } = theme;
   return (
-    <Row gap={spacing.xs} wrap>
+    <Row gap={4}>
       {Array.from({ length: 11 }, (_, n) => {
         const active = n === value;
         return (
@@ -387,8 +401,8 @@ function PainScale({ value, onChange }: { value: number; onChange: (n: number) =
             accessibilityState={{ selected: active }}
             onPress={() => onChange(n)}
             style={[
-              styles.scaleDot,
-              { backgroundColor: active ? color.primary : color.surfaceMuted, borderColor: active ? color.primary : color.border },
+              styles.scaleTile,
+              { backgroundColor: active ? color.primary : color.surfaceMuted },
             ]}
           >
             <Text style={[styles.scaleLabel, { color: active ? color.onPrimary : color.textSecondary }]}>{n}</Text>
@@ -436,7 +450,7 @@ function SeverityScale({ value, onChange }: { value: number | null; onChange: (n
 
 const SEVERITY_ROW_TONE: SeverityTone = 'high';
 
-function SideEffectLogger() {
+function SideEffectLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void }) {
   const theme = useTheme();
   const { color } = theme;
   const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
@@ -461,7 +475,7 @@ function SideEffectLogger() {
 
   const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const save = () => {
+  const save = useCallback(() => {
     if (!canSave || severity === null) return;
     const date = today();
     logSideEffects(chosenLabels.map((label) => ({ date, label, severity, note: note.trim() || undefined })));
@@ -469,7 +483,12 @@ function SideEffectLogger() {
     setOther('');
     setSeverity(null);
     setNote('');
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSave, severity, chosenLabels, note, logSideEffects]);
+
+  useEffect(() => {
+    onCtaChange({ label: 'Log how you feel', disabled: !canSave, onPress: save });
+  }, [canSave, save, onCtaChange]);
 
   return (
     <View>
@@ -518,7 +537,6 @@ function SideEffectLogger() {
           placeholder="Context — timing, meals, dose changes (optional)"
           multiline
         />
-        <Button label="Log how you feel" onPress={save} disabled={!canSave} />
       </Section>
 
       <Section title="Reconstitution ratio">
@@ -687,6 +705,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderRadius: radius.md,
+  },
+  scaleTile: {
+    flex: 1,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
   },
   scaleLabel: {
     fontFamily: fonts.medium,

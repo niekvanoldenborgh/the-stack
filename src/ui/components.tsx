@@ -36,6 +36,7 @@ export function Screen({
   edges = ['top'],
   atmosphere = true,
   tint,
+  floatingAction,
 }: {
   children: ReactNode;
   scroll?: boolean;
@@ -44,6 +45,11 @@ export function Screen({
   /** Soft accent wash behind the header. */
   atmosphere?: boolean;
   tint?: string;
+  /** A `FloatingCTA` (spec-v2 §3.10), rendered as a sibling of the scroll
+   *  view rather than inside it — `position: absolute` inside a `ScrollView`
+   *  would anchor to scrolled content, not the screen, and the button would
+   *  drift off-screen as soon as the user scrolled. */
+  floatingAction?: ReactNode;
 }) {
   const theme = useTheme();
   const inner = (
@@ -54,7 +60,10 @@ export function Screen({
       {atmosphere ? <ScreenAtmosphere tint={tint} /> : null}
       {scroll ? (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: spacing.xxl * 2 }}
+          // Clears the floating tab bar (64 tall + 14 inset, spec-v2 §3.9) on
+          // tab screens with room to spare; harmless extra whitespace on
+          // pushed/modal screens that don't have the bar.
+          contentContainerStyle={{ paddingBottom: spacing.xxl * 2 + 40 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -63,6 +72,7 @@ export function Screen({
       ) : (
         inner
       )}
+      {floatingAction}
     </SafeAreaView>
   );
 }
@@ -304,7 +314,12 @@ export function Button({
 }: {
   label: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  /** `onGradient` — solid `surface` fill, `primary`-tinted text, no border.
+   *  For the one white CTA sitting on a gradient hero (spec-v2 §4.2); every
+   *  other on-gradient text already uses `onPrimary`, so this variant is
+   *  reserved for that single button shape, not "secondary but readable on
+   *  colour". */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'onGradient';
   disabled?: boolean;
   loading?: boolean;
   gradient?: boolean;
@@ -323,6 +338,7 @@ export function Button({
     },
     ghost: { bg: 'transparent', fg: color.primary, border: 'transparent' },
     danger: { bg: danger.bg, fg: danger.fg, border: 'transparent' },
+    onGradient: { bg: color.surface, fg: color.primary, border: 'transparent' },
   }[variant];
 
   const content = loading ? (

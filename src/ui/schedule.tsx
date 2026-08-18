@@ -223,15 +223,27 @@ export function IconAction({
   );
 }
 
-/** Segmented filter pills. */
+/**
+ * Segmented filter pills.
+ *
+ * `tone`/`fill` (spec-v2 §3.7) both default to the original behaviour, so
+ * every pre-existing call site is unaffected. `tone="ink"` reads as more
+ * decisive/structural than the soft violet-selected default — reserve it for
+ * a genuine mode switch between two full sub-views (Logger's
+ * injection/side-effect split), not a filter chip.
+ */
 export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  tone = 'accent',
+  fill = true,
 }: {
   options: Array<{ value: T; label: string }>;
   value: T;
   onChange: (next: T) => void;
+  tone?: 'accent' | 'ink';
+  fill?: boolean;
 }) {
   const theme = useTheme();
   const { color } = theme;
@@ -239,24 +251,32 @@ export function Segmented<T extends string>({
     <Row gap={spacing.xs}>
       {options.map((option) => {
         const selected = option.value === value;
+        const selectedBg = tone === 'ink' ? color.textPrimary : color.primarySolid;
+        const selectedBorder = tone === 'ink' ? color.textPrimary : color.primary;
+        // textPrimary/background are always the opposite-contrast ends of a
+        // theme's scale, so this pair stays legible in both light and dark
+        // without a dedicated "on-ink" token.
+        const selectedFg = tone === 'ink' ? color.background : color.onPrimary;
         return (
           <Pressable
             key={option.value}
             onPress={() => onChange(option.value)}
             accessibilityRole="button"
             accessibilityState={{ selected }}
-            style={({ pressed }) => ({
-              flex: 1,
-              alignItems: 'center',
-              paddingVertical: spacing.sm + 2,
-              borderRadius: radius.pill,
-              borderWidth: 1,
-              borderColor: selected ? color.primary : color.border,
-              backgroundColor: selected ? color.primarySolid : color.surface,
-              opacity: pressed ? 0.75 : 1,
-            })}
+            style={({ pressed }) => [
+              fill ? { flex: 1 } : { paddingHorizontal: spacing.lg },
+              {
+                alignItems: 'center',
+                paddingVertical: spacing.sm + 2,
+                borderRadius: radius.pill,
+                borderWidth: 1,
+                borderColor: selected ? selectedBorder : color.border,
+                backgroundColor: selected ? selectedBg : color.surface,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
           >
-            <Small muted={false} style={{ color: selected ? color.onPrimary : color.textSecondary }}>
+            <Small muted={false} style={{ color: selected ? selectedFg : color.textSecondary }}>
               {option.label}
             </Small>
           </Pressable>

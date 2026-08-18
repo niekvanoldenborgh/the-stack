@@ -55,6 +55,14 @@ export interface ColorTokens {
   primarySoft: string;
   primarySoftText: string;
   accentGradient: readonly [string, string, string];
+  /** Avatar badge only — a lighter 2-stop relative of `accentGradient`, not a
+   *  general accent. `accentGradient`'s 3 stops read muddy at avatar size
+   *  (pulse-design-spec-v2 §1). */
+  avatarGradient: readonly [string, string];
+  /** Hero pulse-dot only, on-gradient. Not a severity/status colour — a mint
+   *  lighter than `success` because the darker green loses contrast sitting
+   *  on the violet hero gradient (pulse-design-spec-v2 §1). */
+  heroAccent: string;
 
   success: string;
   successSoft: string;
@@ -97,6 +105,8 @@ const LIGHT_COLORS: ColorTokens = {
   primarySoft: '#EFEDFD',
   primarySoftText: '#4A45B8',
   accentGradient: ['#5A54D1', '#7B5BE0', '#9D6BF0'],
+  avatarGradient: ['#6A63F0', '#9D7BF5'],
+  heroAccent: '#7CFFB2',
 
   success: '#1FA968',
   successSoft: '#E4F8EE',
@@ -143,6 +153,12 @@ const DARK_COLORS: ColorTokens = {
   primarySoft: '#292641',
   primarySoftText: '#A99FF7',
   accentGradient: ['#5A54D1', '#7459D9', '#8B63E8'],
+  // Lightened ~15% over the light-mode avatarGradient, mirroring how
+  // accentGradient's dark variant relates to its light one (spec-v2 §1).
+  avatarGradient: ['#8981F7', '#B79BFA'],
+  // Unchanged — already light enough against the dark-mode hero gradient,
+  // which is itself lighter than light-mode's (spec-v2 §1).
+  heroAccent: '#7CFFB2',
 
   success: '#45C987',
   successSoft: '#183629',
@@ -167,6 +183,20 @@ const DARK_COLORS: ColorTokens = {
 };
 
 export const COLOR_TOKENS: Record<ThemeMode, ColorTokens> = { light: LIGHT_COLORS, dark: DARK_COLORS };
+
+/**
+ * `#RRGGBB` + alpha → `rgba(...)`. Only reach for this where no token already
+ * covers the exact opacity — currently just the floating tab bar's solid
+ * translucent fallback for KIMI's `backdrop-filter: blur()` (spec-v2 §3.9,
+ * AGENTS.md — there's no literal RN equivalent for backdrop blur).
+ */
+export function withOpacity(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 /**
  * `tone` → { fg, bg, softText }, theme-aware.
@@ -248,6 +278,10 @@ export const typography = {
   },
   data: { fontFamily: fonts.medium, fontSize: 15, fontVariant: TABULAR_NUMS },
   dataSmall: { fontFamily: fonts.medium, fontSize: 12.5, fontVariant: TABULAR_NUMS },
+  /** `StatCard`'s big figure (pulse-design-spec-v2 §2) — same size as `title`
+   *  but heavier (800) and tighter tracking; kept as its own scale step
+   *  rather than overloading `title`'s weight. */
+  statBig: { fontFamily: fonts.displayBold, fontSize: 22, letterSpacing: -0.44, lineHeight: 26, fontVariant: TABULAR_NUMS },
 } as const;
 
 export const spacing = {
