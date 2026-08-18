@@ -27,6 +27,15 @@ CREATE TABLE users (
   email              VARCHAR(320) NOT NULL,
   email_normalized   VARCHAR(320) GENERATED ALWAYS AS (LOWER(email)) STORED,
   email_verified_at  DATETIME(3) NULL,
+  -- Verified date of birth — the Art. 8 age-of-consent gate anchors on this,
+  -- never on `user_health_profiles.age` (a self-reported, editable snapshot
+  -- that can't prove anything for a compliance check). Nullable because the
+  -- exact minimum-account-age policy is a pending CEO/product decision
+  -- (THEA-95); this column exists now so the schema doesn't block that
+  -- decision landing later, and so the API layer has somewhere to write a
+  -- verified value the moment the policy is confirmed. See
+  -- `guardian_consents` below for the below-threshold case.
+  date_of_birth      DATE NULL,
   -- 'deleted' is currently unreachable: the planned hard-purge is a literal
   -- `DELETE FROM users`, which removes the row rather than transitioning it
   -- to this status. It's reserved here in case the purge design lands on
@@ -41,7 +50,15 @@ CREATE TABLE users (
   -- which cascades to every table below. Not implemented in this migration.
   deleted_at         DATETIME(3) NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_users_email_normalized (email_normalized)
+  UNIQUE KEY uq_users_email_normalized (email_normalized),
+  -- `status` and `deleted_at` must not drift: either both say "no erasure in
+  -- flight" or both say "one is" (THEA-86 review, non-blocking item 2) — an
+  -- app-layer bug that sets one without the other is a schema violation, not
+  -- a silent inconsistency a later query has to notice.
+  CONSTRAINT chk_users_status_deleted_at CHECK (
+    (deleted_at IS NULL AND status NOT IN ('pending_deletion', 'deleted')) OR
+    (deleted_at IS NOT NULL AND status IN ('pending_deletion', 'deleted'))
+  )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- One row per login method. Supports email+password today (owner chose
@@ -100,7 +117,13 @@ CREATE TABLE consents (
   id            CHAR(36) NOT NULL,
   user_id       CHAR(36) NOT NULL,
   -- 'health_data_processing' is the Art. 9(2)(a) explicit consent required
-  -- before any row is written to the health tables below.
+  -- before any row is written to the health tables below. This table can
+  -- only ever log that a grant happened — it cannot, by itself, stop a
+  -- write. Whichever ticket implements the API write path to
+  -- `user_health_profiles`/`stacks`/`dose_logs`/etc. MUST check for a live
+  -- (granted, not-superseded-by-a-later-revoke) row here before every
+  -- insert; that check is a hard precondition, not a nice-to-have (THEA-86
+  -- review item 3 / THEA-92).
   purpose       ENUM('account','health_data_processing','marketing') NOT NULL,
   granted       BOOLEAN NOT NULL,
   legal_basis   ENUM('consent','contract','legal_obligation') NOT NULL DEFAULT 'consent',
@@ -115,6 +138,29 @@ CREATE TABLE consents (
   CONSTRAINT chk_consents_health_requires_consent CHECK (
     purpose <> 'health_data_processing' OR legal_basis = 'consent'
   )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Verifiable guardian/parental consent (Art. 8(1)) for a user below the
+-- account's minimum-age-without-guardian threshold. Kept as its own table
+-- rather than folded into `consents` because it carries a second person's
+-- identifying data (the guardian's email) — data the append-only consent
+-- log has no room for and which must be independently erasable/exportable
+-- from the minor's own record. `verified_at` is deliberately separate from
+-- `granted_at`: a guardian clicking a link isn't proof until the API layer's
+-- verification step (e.g. confirmed-email round trip) completes.
+-- The numeric age threshold this table exists to support is still a pending
+-- CEO/product decision (THEA-95) — this is schema support for whatever that
+-- decision turns out to require, not an enforcement of one particular number.
+CREATE TABLE guardian_consents (
+  id              CHAR(36) NOT NULL,
+  user_id         CHAR(36) NOT NULL,
+  guardian_email  VARCHAR(320) NOT NULL,
+  verified_at     DATETIME(3) NULL,
+  granted_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  revoked_at      DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  KEY idx_guardian_consents_user (user_id),
+  CONSTRAINT fk_guardian_consents_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Access / erasure / portability requests (Art. 15, 17, 20). This table is

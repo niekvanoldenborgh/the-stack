@@ -43,8 +43,16 @@ npm install
 DB_HOST=... DB_PORT=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run migrate
 ```
 
-It's idempotent — already-applied files are skipped (tracked by filename in
-`schema_migrations`), so re-running after a partial failure is safe.
+It's idempotent at **statement** granularity, not just file granularity —
+`schema_migrations` records one row per successfully-applied statement
+(`migration_file`, `statement_index`), written immediately after that
+statement runs. A failure partway through a file leaves an accurate record
+of exactly how far it got; re-running resumes at the first unrecorded
+statement instead of replaying (and dying on) statements that already
+landed. If a file is edited after one of its statements was already applied,
+the checksum recorded for that statement won't match and the run refuses
+rather than silently applying a different statement under the same index —
+add a new migration file instead of editing an applied one.
 
 ## Design principles
 
@@ -103,6 +111,17 @@ It's idempotent — already-applied files are skipped (tracked by filename in
 8. **Data minimisation.** No name, address, or phone number is collected
    anywhere in this schema — the app never asked for them client-side either,
    and the account model doesn't invent a reason to start.
+9. **Art. 8 (children) has schema support, not yet an enforced policy.**
+   AGENTS.md documents shipped under-18/21/25 handling in the recommendation
+   engine, so minors are a known user segment — but the account schema had
+   no age-of-consent gate at all (THEA-86 review item 2). `users.date_of_birth`
+   (verified, distinct from the self-reported, editable
+   `user_health_profiles.age`) and `guardian_consents` (verifiable
+   parental/guardian consent, kept separate from `consents` because it
+   carries a second person's identifying data) now exist so the schema can
+   support whichever minimum-age policy gets decided. **The actual number,
+   and how the API layer enforces it at signup, is a pending CEO/product
+   decision — not invented here.** Tracked in THEA-95.
 
 ## GDPR mechanics this schema supports directly
 
@@ -114,6 +133,11 @@ It's idempotent — already-applied files are skipped (tracked by filename in
   purpose and policy version.
 - **Security logging:** `audit_log` — login attempts, password changes,
   consent changes, exports, erasures.
+- **Children/minors (Art. 8):** `users.date_of_birth` + `guardian_consents`
+  give the API layer somewhere to enforce an age-of-consent gate and
+  verified guardian consent below it. The gate itself — the minimum age and
+  the enforcement rule — is a pending product/legal decision (THEA-95), not
+  something this schema decides.
 
 ## What this migration deliberately does not do
 
@@ -126,11 +150,34 @@ It's idempotent — already-applied files are skipped (tracked by filename in
   hosting environment can't guarantee disk-level encryption at rest for
   special-category data, that's an infra decision for whoever stands up the
   live server, not something a migration file can decide.
+- Does not define a retention/storage-limitation policy (Art. 5(1)(e)) for
+  `audit_log` or any other append-only log table — there's currently no
+  upper bound on how long a login/consent/erasure event stays queryable.
+  Flagged by the THEA-86 review as non-blocking; needs a decision (a
+  retention window + a purge job) before this schema should be treated as
+  fully compliant, not just "not actively violating" Art. 5.
+- Does not enforce the `health_data_processing` consent gate or the (not yet
+  decided) Art. 8 minimum-age gate — both are explicitly application-layer
+  work, called out as hard preconditions on whichever ticket writes to the
+  tables they gate (see design principles 5 and 9 above).
 - Was not applied to the live database — see "Infra" above. Needs a re-run
   from an environment that can actually reach `DB_HOST`.
 
 ## Next step
 
-**THEA-86 (THEA-84b, Benji)** — GDPR/compliance review of this schema — is
-queued as a sibling issue under THEA-84. It doesn't need a live database to
-review; the DDL and this README are the artifact.
+**THEA-86 (THEA-84b, Benji)** GDPR/compliance review of this schema
+found three blocking issues (migrate.mjs partial-failure idempotency, no
+Art. 8 provision, unenforced consent gate) and several non-blocking ones.
+Remediation is split across two tickets because the review process filed it
+twice against the same schema before the duplication was caught:
+
+- **THEA-92** (this ticket) — migrate.mjs per-statement idempotency (fixed),
+  Art. 8 schema support (fixed, policy decision escalated to **THEA-95**),
+  consent-gate enforcement documented as a hard precondition + flagged on
+  THEA-90 (the ticket that will actually implement writes), `users.status`/
+  `deleted_at` drift closed with a `CHECK` constraint, retention-policy gap
+  documented above (not fixed — needs its own decision, not filed as its own
+  ticket yet).
+- **THEA-94** — `ip_hash` HMAC pepper, `data_subject_requests` `SET NULL`
+  fix, `audit_log.metadata` PII-after-erasure guardrail. Tracked and worked
+  separately; not duplicated here.
