@@ -1,21 +1,25 @@
 import { Stack } from 'expo-router';
+import { View } from 'react-native';
 
 import {
   TERMS_OF_SERVICE_BODY,
+  TERMS_OF_SERVICE_INTRO,
   TERMS_OF_SERVICE_LINK_LABEL,
+  TERMS_OF_SERVICE_OUTRO,
   TERMS_OF_SERVICE_PENDING,
 } from '../../src/content/termsOfService';
-import { Body, Callout, Screen, Spacer } from '../../src/ui/components';
+import { Body, Callout, Divider, Heading, Screen, Spacer } from '../../src/ui/components';
 import { spacing } from '../../src/ui/theme';
 
 /**
  * Full Terms of Service / liability agreement (THEA-93).
  *
- * Text is sourced from THEA-91 (Benji, compliance) via
+ * Text is sourced verbatim from THEA-91 (Benji, compliance) via
  * `src/content/termsOfService.ts` — this route only renders it, it does not
- * author it (mirrors `app/settings/privacy.tsx`, THEA-12a). Reached two ways:
- * the acceptance link in onboarding, and the durable "Terms of Service" row
- * under Settings › Data & privacy, for re-reading after acceptance.
+ * author it (mirrors `app/settings/privacy.tsx`, THEA-12a). Reached two
+ * ways: the acceptance link in onboarding, and the durable "Terms of
+ * Service" row under Settings › Data & privacy, for re-reading after
+ * acceptance.
  */
 export default function TermsOfServiceScreen() {
   return (
@@ -32,11 +36,22 @@ export default function TermsOfServiceScreen() {
         </Callout>
       ) : null}
 
-      {TERMS_OF_SERVICE_BODY.map((paragraph, index) => (
-        <Body key={index} muted style={{ marginTop: spacing.md }}>
-          {paragraph}
-        </Body>
+      <Body muted style={{ marginTop: spacing.md }}>
+        {TERMS_OF_SERVICE_INTRO}
+      </Body>
+
+      {TERMS_OF_SERVICE_BODY.map((section, index) => (
+        <View key={section.heading}>
+          <Divider style={{ marginTop: spacing.xl, marginBottom: spacing.md }} />
+          <Heading>{section.heading}</Heading>
+          <Body muted style={{ marginTop: spacing.sm }}>
+            {section.body}
+          </Body>
+        </View>
       ))}
+
+      <Divider style={{ marginTop: spacing.xl, marginBottom: spacing.md }} />
+      <Body muted>{TERMS_OF_SERVICE_OUTRO}</Body>
 
       <Spacer size={spacing.xxl} />
     </Screen>
