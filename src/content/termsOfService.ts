@@ -2,8 +2,10 @@
  * Terms of Service / liability agreement copy (THEA-104).
  *
  * Sourced verbatim from THEA-103 (Benji, compliance) — Paperclip document key
- * `terms-of-service`, revision 3, pulled 2026-08-18. This is the single file
- * that carries that copy; nothing here was authored by a developer
+ * `terms-of-service`, revision 4, pulled 2026-08-18 at revision 3 and
+ * verified 2026-08-18 (THEA-109) to already match revision 4 verbatim. This
+ * is the single file that carries that copy; nothing here was authored by a
+ * developer
  * (AGENTS.md; same rule already applied to `app/settings/privacy.tsx`,
  * THEA-12a). The source document is written in markdown with inline bold/
  * italic emphasis and `-` bullet lists; `TermsOfServiceScreen` renders each
@@ -29,7 +31,14 @@
  * accounts and does not narrow the app's separate under-18/21/25 in-app
  * safety notices (AGENTS.md invariant 7).
  *
- * Benji's compliance note (THEA-91, still true at revision 3): this is a
+ * Revision 4 (THEA-107 compliance QC) is a single cross-reference fix in
+ * Section 7 (No Warranty): "(see Section 9)" became "(see Sections 5 and 9)"
+ * so the carve-out also points at Section 5's non-excludable-liability
+ * clause, not just Section 9's governing-law text. No other wording changed
+ * from revision 3, and this is not a material change requiring
+ * re-acceptance (see `ACCEPTED_TERMS_VERSION` below).
+ *
+ * Benji's compliance note (THEA-91, still true at revision 4): this is a
  * self-authored disclaimer, not attorney-drafted. It follows standard
  * structure and reduces exposure, but does not guarantee zero liability or
  * enforceability — real licensed-attorney review is recommended before
@@ -50,7 +59,9 @@ export const TERMS_OF_SERVICE_PENDING = false;
  * Bumped whenever the shipped copy above changes in a way that requires
  * re-acceptance (THEA-104). Not rendered in the UI; exists so the store
  * migration has something concrete to key off rather than guessing from a
- * timestamp. Current value corresponds to `terms-of-service` revision 3.
+ * timestamp. Current value was set at `terms-of-service` revision 3 and
+ * still applies at revision 4 — the revision-4 cross-reference fix (THEA-107,
+ * THEA-109) is non-material and does not require re-acceptance.
  */
 export const ACCEPTED_TERMS_VERSION = 3;
 
