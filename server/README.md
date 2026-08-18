@@ -60,25 +60,36 @@ It's idempotent — already-applied files are skipped (tracked by filename in
    normalized email for password auth and the OIDC `sub` claim for Google/
    Apple — stable across email or profile-name changes on the IdP side.
 3. **No plaintext secrets.** Passwords are Argon2id-encoded hashes (never
-   in this schema as plaintext, never reversible). Refresh tokens and client
-   IPs are stored as SHA-256 hashes, not raw values — a DB read alone can't
-   be replayed as a session or reveal a real IP.
+   in this schema as plaintext, never reversible). Refresh tokens are stored
+   as SHA-256 hashes. Client IPs are stored as `HMAC-SHA256(ip, pepper)`,
+   not a bare digest — IPv4 space (~4.3B addresses) is small enough to brute
+   force offline from an unsalted SHA-256 alone, so `sessions.ip_hash`
+   requires a server-side secret pepper (an env var, set at the API-layer
+   write site, never stored in this DB) to actually pseudonymize the address
+   rather than just obscure it.
 4. **Erasure is one `DELETE`.** Every personal-data table has
    `ON DELETE CASCADE` back to `users.id`. Deleting the user row removes
    everything (Art. 17) without a hand-maintained fan-out list to keep in
-   sync as tables get added. `audit_log` is the one exception
-   (`ON DELETE SET NULL`) — it keeps a depersonalised trail proving an
-   account existed and was erased, without retaining the personal data
-   itself. `users.deleted_at` is a soft-delete tombstone for the in-flight
-   request; the hard purge (the actual `DELETE FROM users`) is a follow-up
-   this migration doesn't implement.
+   sync as tables get added. `audit_log` and `data_subject_requests` are the
+   two exceptions (`ON DELETE SET NULL`) — both keep a depersonalised trail
+   (that an account existed and was erased; that an Art. 15/17/20 request
+   was made and resolved) without retaining the personal data itself.
+   `audit_log.metadata` must only ever hold ids/enums/counts, never PII —
+   otherwise a hard-delete would no longer erase it, since this table is
+   deliberately exempt from cascade. `users.deleted_at` is a soft-delete
+   tombstone for the in-flight request; the hard purge (the actual
+   `DELETE FROM users`) is a follow-up this migration doesn't implement.
 5. **Consent is an append-only log, not a flag.** `consents` never updates a
    row in place — every grant/revoke is a new row, so "prove this user
    consented to X on date Y" (Art. 7(1)) is a query, not an assumption.
    `purpose = 'health_data_processing'` is the Art. 9(2)(a) explicit consent
    gate that the API layer must check before writing to any health table —
    this migration defines the column, it does not enforce the check; that's
-   application logic, out of scope for a schema.
+   application logic, out of scope for a schema. It does enforce one narrower
+   rule at the DB level (`chk_consents_health_requires_consent`): a
+   `health_data_processing` row can't be recorded under `legal_basis =
+   'contract'`/`'legal_obligation'`, since Art. 9(2)(a) requires consent
+   specifically, not just any lawful basis.
 6. **No re-derived dosing/safety logic.** `stacks.items` and `stacks.safety`
    are stored as JSON, verbatim from what `src/engine` computed
    (`domain/types.ts` already documents `Stack.safety` as "a snapshot of the
