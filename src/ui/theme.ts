@@ -153,9 +153,14 @@ const DARK_COLORS: ColorTokens = {
   primarySoft: '#292641',
   primarySoftText: '#A99FF7',
   accentGradient: ['#5A54D1', '#7459D9', '#8B63E8'],
-  // Lightened ~15% over the light-mode avatarGradient, mirroring how
-  // accentGradient's dark variant relates to its light one (spec-v2 §1).
-  avatarGradient: ['#8981F7', '#B79BFA'],
+  // Darkened ~8% L from the earlier spec-v2 §1 values: the white avatar icon
+  // sits centred on this gradient, so both stops and their blended midpoint
+  // must clear the 3:1 WCAG non-text floor. The old ['#8981F7','#B79BFA'] ramp
+  // failed (stop1 2.31:1, midpoint 2.72:1 — THEA-78). This pair keeps the same
+  // violet→lavender direction and hue with margin (stop0 4.81:1, stop1 3.36:1,
+  // midpoint 4.02:1). Light-mode avatarGradient stays lighter — its icon still
+  // clears the floor there.
+  avatarGradient: ['#655BF5', '#9B74F8'],
   // Unchanged — already light enough against the dark-mode hero gradient,
   // which is itself lighter than light-mode's (spec-v2 §1).
   heroAccent: '#7CFFB2',
