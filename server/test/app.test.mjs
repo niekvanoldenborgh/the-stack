@@ -21,6 +21,7 @@ async function withServer(t) {
 const VALID_REGISTER = {
   email: 'app-test@example.com',
   password: 'a-strong-password',
+  dateOfBirth: '1990-06-15',
   tosAccepted: true,
   healthDataConsent: true,
 };
@@ -62,6 +63,19 @@ test('register with missing consent returns 400 with a stable error code', async
   assert.equal(res.status, 400);
   const body = await res.json();
   assert.equal(body.error.code, 'health_consent_required');
+});
+
+test('register with an under-18 date of birth returns 400 under_18 (THEA-95)', async (t) => {
+  const base = await withServer(t);
+  const seventeenYearsAgo = new Date();
+  seventeenYearsAgo.setUTCFullYear(seventeenYearsAgo.getUTCFullYear() - 17);
+  const res = await fetch(`${base}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...VALID_REGISTER, dateOfBirth: seventeenYearsAgo.toISOString().slice(0, 10) }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error.code, 'under_18');
 });
 
 test('login with wrong password returns 401', async (t) => {

@@ -80,6 +80,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function register(input: {
   email: string;
   password: string;
+  /** `YYYY-MM-DD`, self-attested. THEA-95 account-age gate (18+) — the
+   *  server is the enforcement point (`error.code === 'under_18'`); this is
+   *  just what ships over the wire. */
+  dateOfBirth: string;
   tosAccepted: boolean;
   healthDataConsent: boolean;
 }): Promise<AuthSession> {

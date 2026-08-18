@@ -83,7 +83,7 @@ screen's `Callout` copy, THEA-97 §4.4, is keyed off these).
 
 | Method & path | Body | Notes |
 |---|---|---|
-| `POST /register` | `{ email, password, tosAccepted, healthDataConsent }` | Both consent flags must be `true` — two separate `consents` rows, not one bundled checkbox (see `service.mjs` consent-purpose-mapping comment for why `tosAccepted` lands under `purpose='account'`, not a `'terms_of_service'` value the schema doesn't have). 201 + `{ user, accessToken, refreshToken, expiresIn }`. 409 `email_already_registered` on duplicate. |
+| `POST /register` | `{ email, password, dateOfBirth, tosAccepted, healthDataConsent }` | Both consent flags must be `true` — two separate `consents` rows, not one bundled checkbox (see `service.mjs` consent-purpose-mapping comment for why `tosAccepted` lands under `purpose='account'`, not a `'terms_of_service'` value the schema doesn't have). `dateOfBirth` is `YYYY-MM-DD`, required, self-attested, server-enforced 18+ (THEA-95 — see design principle 9 below); 400 `invalid_date_of_birth` / `under_18`. 201 + `{ user, accessToken, refreshToken, expiresIn }`. 409 `email_already_registered` on duplicate. |
 | `POST /login` | `{ email, password }` | 401 `invalid_credentials` for both "no such user" and "wrong password" — same message, deliberately (auth-enumeration hygiene). |
 | `POST /refresh` | `{ refreshToken }` | Rotates: the presented token is revoked and a new one issued, so a captured-but-unused refresh token stops working the moment the real client refreshes. 401 `invalid_refresh_token` if expired/revoked/unknown. |
 | `POST /logout` | `{ refreshToken }` | Revokes that session. 204, silently a no-op for an unknown token. |
@@ -187,17 +187,20 @@ add a new migration file instead of editing an applied one.
 8. **Data minimisation.** No name, address, or phone number is collected
    anywhere in this schema — the app never asked for them client-side either,
    and the account model doesn't invent a reason to start.
-9. **Art. 8 (children) has schema support, not yet an enforced policy.**
-   AGENTS.md documents shipped under-18/21/25 handling in the recommendation
-   engine, so minors are a known user segment — but the account schema had
-   no age-of-consent gate at all (THEA-86 review item 2). `users.date_of_birth`
-   (verified, distinct from the self-reported, editable
-   `user_health_profiles.age`) and `guardian_consents` (verifiable
-   parental/guardian consent, kept separate from `consents` because it
-   carries a second person's identifying data) now exist so the schema can
-   support whichever minimum-age policy gets decided. **The actual number,
-   and how the API layer enforces it at signup, is a pending CEO/product
-   decision — not invented here.** Tracked in THEA-95.
+9. **Art. 8 (children): 18+ accounts, enforced at signup (THEA-95).** AGENTS.md
+   documents shipped under-18/21/25 handling in the recommendation engine, so
+   minors are a known user segment — but the account schema originally had no
+   age-of-consent gate at all (THEA-86 review item 2). The owner's THEA-95
+   decision was a flat 18+ minimum, self-attested: `registerUser`
+   (`auth/service.mjs`) now rejects registration below that age, computed
+   from the required `dateOfBirth` field against `users.date_of_birth`
+   (verified-at-signup, distinct from the self-reported, editable
+   `user_health_profiles.age`). Because 18+ removes the need for a
+   below-threshold path, `guardian_consents` stays in the schema unused
+   rather than being wired up — there is no verifiable-parental-consent flow
+   to build. Rejection copy is deliberately non-shaming and names the
+   account-free calculator (`app/settings/account.tsx`, `service.mjs`'s
+   `UNDER_AGE_MESSAGE`) so a rejected signup is never a dead end.
 
 ## GDPR mechanics this schema supports directly
 
@@ -209,11 +212,11 @@ add a new migration file instead of editing an applied one.
   purpose and policy version.
 - **Security logging:** `audit_log` — login attempts, password changes,
   consent changes, exports, erasures.
-- **Children/minors (Art. 8):** `users.date_of_birth` + `guardian_consents`
-  give the API layer somewhere to enforce an age-of-consent gate and
-  verified guardian consent below it. The gate itself — the minimum age and
-  the enforcement rule — is a pending product/legal decision (THEA-95), not
-  something this schema decides.
+- **Children/minors (Art. 8):** enforced — `registerUser` rejects
+  registration under 18 (THEA-95), computed from the required, self-attested
+  `dateOfBirth` and persisted to `users.date_of_birth`. `guardian_consents`
+  remains schema-only and unused; the 18+ policy has no below-threshold path
+  that needs it.
 
 ## What this migration deliberately does not do
 
@@ -233,10 +236,11 @@ add a new migration file instead of editing an applied one.
   Flagged by the THEA-86 review as non-blocking; needs a decision (a
   retention window + a purge job) before this schema should be treated as
   fully compliant, not just "not actively violating" Art. 5.
-- Does not enforce the `health_data_processing` consent gate or the (not yet
-  decided) Art. 8 minimum-age gate — both are explicitly application-layer
-  work, called out as hard preconditions on whichever ticket writes to the
-  tables they gate (see design principles 5 and 9 above).
+- Does not enforce the `health_data_processing` consent gate itself — that is
+  explicitly application-layer work, called out as a hard precondition on
+  whichever ticket writes to the tables it gates (see design principle 5
+  above). The Art. 8 minimum-age gate (design principle 9) **is** enforced,
+  as of THEA-90/THEA-95.
 - Was not applied to the live database — see "Infra" above. Needs a re-run
   from an environment that can actually reach `DB_HOST`.
 

@@ -30,14 +30,14 @@ export function createFakeAuthStore() {
       return user ? { ...user } : null;
     },
 
-    async createUserWithPassword({ email, passwordHash }) {
+    async createUserWithPassword({ email, passwordHash, dateOfBirth }) {
       if (usersByEmail.has(email)) {
         const err = new Error('Duplicate entry');
         err.code = 'ER_DUP_ENTRY';
         throw err;
       }
       const id = randomUUID();
-      usersById.set(id, { id, email, status: 'active', deleted_at: null });
+      usersById.set(id, { id, email, status: 'active', deleted_at: null, date_of_birth: dateOfBirth });
       usersByEmail.set(email, id);
       identitiesByEmail.set(email, { user_id: id, password_hash: passwordHash, last_used_at: null });
       return { id, email };

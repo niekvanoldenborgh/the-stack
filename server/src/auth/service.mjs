@@ -13,7 +13,15 @@ import {
   signAccessToken,
   verifyAccessToken,
 } from '../lib/tokens.mjs';
-import { MIN_PASSWORD_LENGTH, isValidEmail, isValidPassword, normalizeEmail } from '../lib/validation.mjs';
+import {
+  MIN_ACCOUNT_AGE_YEARS,
+  MIN_PASSWORD_LENGTH,
+  ageFromDateOfBirth,
+  isValidDateOfBirth,
+  isValidEmail,
+  isValidPassword,
+  normalizeEmail,
+} from '../lib/validation.mjs';
 
 /**
  * Consent purpose mapping — READ BEFORE CHANGING.
@@ -33,6 +41,21 @@ import { MIN_PASSWORD_LENGTH, isValidEmail, isValidPassword, normalizeEmail } fr
  */
 const TOS_CONSENT_PURPOSE = 'account';
 const HEALTH_CONSENT_PURPOSE = 'health_data_processing';
+
+/**
+ * THEA-95 age gate (A1–A4, THEA-90 review). Non-shaming per the review
+ * brief: states the requirement plainly, names the mechanism (data-
+ * protection age-of-consent rules, not a moral judgement), and explicitly
+ * does not dead-end a rejected signup — the app's calculators and safety
+ * features all work fully on-device with no account. Must not contradict
+ * `terms-of-service` §2 Eligibility (rev 3), which makes the same two
+ * points. Keep this in sync with that doc's copy and with the client-side
+ * mirror in `app/settings/account.tsx`.
+ */
+const UNDER_AGE_MESSAGE =
+  `Accounts require you to be ${MIN_ACCOUNT_AGE_YEARS} or older — this keeps health data tied to an account within ` +
+  'data-protection age-of-consent rules. Every calculator and safety feature in this app still works fully on this ' +
+  'device without an account.';
 
 function issueTokens({ userId, email }, config) {
   return {
@@ -60,6 +83,16 @@ export async function registerUser(store, config, input) {
   if (!isValidPassword(input.password)) {
     throw new ApiError(400, 'invalid_password', `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
+  // A1/A2 (THEA-95 via THEA-90 review) — a required, self-attested date of
+  // birth, enforced server-side. The client may pre-validate for a cleaner
+  // in-form message, but this is the actual enforcement point; do not trust
+  // a client-side-only check for something GDPR Art. 8 hinges on.
+  if (!isValidDateOfBirth(input.dateOfBirth)) {
+    throw new ApiError(400, 'invalid_date_of_birth', 'Enter your date of birth.');
+  }
+  if (ageFromDateOfBirth(input.dateOfBirth) < MIN_ACCOUNT_AGE_YEARS) {
+    throw new ApiError(400, 'under_18', UNDER_AGE_MESSAGE);
+  }
   // Two separate, both-required flags — the design spec (§3.1, §4.2) is
   // explicit that these must stay two distinct controls, never one bundled
   // "I agree to everything" checkbox (GDPR Art. 7 unbundled-consent rule).
@@ -81,7 +114,7 @@ export async function registerUser(store, config, input) {
 
   let user;
   try {
-    user = await store.createUserWithPassword({ email, passwordHash });
+    user = await store.createUserWithPassword({ email, passwordHash, dateOfBirth: input.dateOfBirth });
   } catch (err) {
     if (err && err.code === 'ER_DUP_ENTRY') {
       throw new ApiError(409, 'email_already_registered', 'That email is already registered.');

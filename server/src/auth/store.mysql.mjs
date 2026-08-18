@@ -23,12 +23,17 @@ export function createMysqlAuthStore(pool) {
     // Inserts `users` + `auth_identities` (provider='password') in one
     // transaction so a partial failure never leaves an identity-less user
     // row or a user-less identity row.
-    async createUserWithPassword({ email, passwordHash }) {
+    // `dateOfBirth` (THEA-95 age gate, A1/A2/A4) is a plain column on `users`
+    // itself, not a separate table — it rides the same INSERT here and the
+    // same `ON DELETE CASCADE`-anchored erasure path as the rest of the
+    // account record with no extra wiring (see server/README.md design
+    // principle 4, "Erasure is one DELETE").
+    async createUserWithPassword({ email, passwordHash, dateOfBirth }) {
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
         const userId = randomUUID();
-        await conn.execute('INSERT INTO users (id, email) VALUES (?, ?)', [userId, email]);
+        await conn.execute('INSERT INTO users (id, email, date_of_birth) VALUES (?, ?, ?)', [userId, email, dateOfBirth]);
         await conn.execute(
           `INSERT INTO auth_identities (id, user_id, provider, provider_subject, password_hash)
            VALUES (?, ?, 'password', ?, ?)`,

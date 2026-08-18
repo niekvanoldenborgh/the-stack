@@ -17,12 +17,22 @@ function testConfig(overrides = {}) {
   return loadConfig({ JWT_SECRET: 'test-secret', ...overrides });
 }
 
+const ADULT_DATE_OF_BIRTH = '1990-06-15';
+
 const VALID_REGISTER = {
   email: 'new-user@example.com',
   password: 'a-strong-password',
+  dateOfBirth: ADULT_DATE_OF_BIRTH,
   tosAccepted: true,
   healthDataConsent: true,
 };
+
+/** `YYYY-MM-DD` for someone who turned `years` old exactly today, UTC. */
+function dateOfBirthYearsAgo(years) {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
 
 test('registerUser creates a user, issues tokens, and records both consents', async () => {
   const store = createFakeAuthStore();
@@ -76,6 +86,64 @@ test('registerUser rejects missing health-data consent, even with ToS accepted',
     () => registerUser(store, testConfig(), { ...VALID_REGISTER, healthDataConsent: false }),
     (err) => err instanceof ApiError && err.status === 400 && err.code === 'health_consent_required',
   );
+});
+
+test('registerUser rejects a missing date of birth (THEA-95 A1/A2)', async () => {
+  const store = createFakeAuthStore();
+  const { dateOfBirth, ...withoutDob } = VALID_REGISTER;
+  await assert.rejects(
+    () => registerUser(store, testConfig(), withoutDob),
+    (err) => err instanceof ApiError && err.status === 400 && err.code === 'invalid_date_of_birth',
+  );
+});
+
+test('registerUser rejects a malformed date of birth', async () => {
+  const store = createFakeAuthStore();
+  await assert.rejects(
+    () => registerUser(store, testConfig(), { ...VALID_REGISTER, dateOfBirth: '06/15/1990' }),
+    (err) => err instanceof ApiError && err.status === 400 && err.code === 'invalid_date_of_birth',
+  );
+});
+
+test('registerUser rejects an impossible calendar date', async () => {
+  const store = createFakeAuthStore();
+  await assert.rejects(
+    () => registerUser(store, testConfig(), { ...VALID_REGISTER, dateOfBirth: '1990-02-30' }),
+    (err) => err instanceof ApiError && err.status === 400 && err.code === 'invalid_date_of_birth',
+  );
+});
+
+test('registerUser rejects a date of birth in the future', async () => {
+  const store = createFakeAuthStore();
+  await assert.rejects(
+    () => registerUser(store, testConfig(), { ...VALID_REGISTER, dateOfBirth: dateOfBirthYearsAgo(-1) }),
+    (err) => err instanceof ApiError && err.status === 400 && err.code === 'invalid_date_of_birth',
+  );
+});
+
+test('registerUser rejects an under-18 date of birth with non-shaming copy that names the account-free calculator (A3)', async () => {
+  const store = createFakeAuthStore();
+  await assert.rejects(
+    () => registerUser(store, testConfig(), { ...VALID_REGISTER, dateOfBirth: dateOfBirthYearsAgo(17) }),
+    (err) =>
+      err instanceof ApiError &&
+      err.status === 400 &&
+      err.code === 'under_18' &&
+      /18/.test(err.message) &&
+      /without an account/i.test(err.message),
+  );
+});
+
+test('registerUser accepts a date of birth on the 18th birthday itself', async () => {
+  const store = createFakeAuthStore();
+  const result = await registerUser(store, testConfig(), { ...VALID_REGISTER, dateOfBirth: dateOfBirthYearsAgo(18) });
+  assert.ok(result.user.id);
+});
+
+test('registerUser persists date_of_birth on the user record (A4 — same row as the rest of the account)', async () => {
+  const store = createFakeAuthStore();
+  const { user } = await registerUser(store, testConfig(), VALID_REGISTER);
+  assert.equal(store._debug.usersById.get(user.id).date_of_birth, ADULT_DATE_OF_BIRTH);
 });
 
 test('registerUser rejects a duplicate email with 409', async () => {

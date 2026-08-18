@@ -23,6 +23,39 @@ import { fonts, radius, spacing, typography, useTheme } from '../../src/ui/theme
 const MIN_PASSWORD_LENGTH = 8; // Mirrors server/src/lib/validation.mjs — keep these two in sync.
 const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// THEA-95 age gate (A1–A4, THEA-90 review). Mirrors
+// server/src/lib/validation.mjs's isValidDateOfBirth/ageFromDateOfBirth/
+// MIN_ACCOUNT_AGE_YEARS — keep these in sync. The server is the actual
+// enforcement point; this is a pre-check for a cleaner in-form message.
+const DATE_OF_BIRTH_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MIN_ACCOUNT_AGE_YEARS = 18;
+
+/** Non-shaming per the THEA-90 review brief (A3): states the requirement
+ *  plainly, names the mechanism, and does not dead-end a rejected signup —
+ *  the calculator and every safety feature keep working on-device with no
+ *  account. Must not contradict `terms-of-service` §2 Eligibility (rev 3);
+ *  mirrors server/src/auth/service.mjs's UNDER_AGE_MESSAGE. */
+const UNDER_18_MESSAGE =
+  'Accounts require you to be 18 or older. This keeps health data tied to an account within data-protection ' +
+  'age-of-consent rules — every calculator and safety feature in this app still works fully on this device without one.';
+
+function isRealCalendarDate(value: string): boolean {
+  if (!DATE_OF_BIRTH_RE.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return false;
+  return date.getTime() <= Date.now();
+}
+
+function ageFromDateOfBirth(value: string): number {
+  const [year, month, day] = value.split('-').map(Number);
+  const now = new Date();
+  let age = now.getUTCFullYear() - year;
+  const hadBirthdayThisYear = now.getUTCMonth() > month - 1 || (now.getUTCMonth() === month - 1 && now.getUTCDate() >= day);
+  if (!hadBirthdayThisYear) age -= 1;
+  return age;
+}
+
 type Mode = 'create' | 'signin';
 
 function Chevron() {
@@ -108,6 +141,8 @@ function mapFormError(err: unknown): FormError | null {
       // Field-level errors are surfaced inline on the field itself, not as a form Callout.
       case 'invalid_email':
       case 'invalid_password':
+      case 'invalid_date_of_birth':
+      case 'under_18':
       case 'tos_not_accepted':
       case 'health_consent_required':
         return null;
@@ -130,12 +165,14 @@ export default function AccountScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [tosChecked, setTosChecked] = useState(false);
   const [healthChecked, setHealthChecked] = useState(false);
 
   const [emailError, setEmailError] = useState<string | undefined>();
   const [passwordError, setPasswordError] = useState<string | undefined>();
   const [confirmError, setConfirmError] = useState<string | undefined>();
+  const [dobError, setDobError] = useState<string | undefined>();
   const [formError, setFormError] = useState<FormError | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resetNoticeVisible, setResetNoticeVisible] = useState(false);
@@ -145,8 +182,10 @@ export default function AccountScreen() {
     // Email is preserved across modes (spec §2.1); password fields are not.
     setPassword('');
     setConfirmPassword('');
+    setDateOfBirth('');
     setPasswordError(undefined);
     setConfirmError(undefined);
+    setDobError(undefined);
     setFormError(null);
     setTosChecked(false);
     setHealthChecked(false);
@@ -156,8 +195,10 @@ export default function AccountScreen() {
   const emailValid = EMAIL_SHAPE_RE.test(email.trim());
   const passwordValid = password.length >= MIN_PASSWORD_LENGTH;
   const confirmValid = mode === 'signin' || confirmPassword === password;
+  const dobRealDate = mode === 'signin' || isRealCalendarDate(dateOfBirth.trim());
+  const dobAdult = mode === 'signin' || (dobRealDate && ageFromDateOfBirth(dateOfBirth.trim()) >= MIN_ACCOUNT_AGE_YEARS);
   const consentValid = mode === 'signin' || (tosChecked && healthChecked);
-  const canSubmit = emailValid && passwordValid && confirmValid && consentValid && !submitting;
+  const canSubmit = emailValid && passwordValid && confirmValid && dobRealDate && dobAdult && consentValid && !submitting;
 
   const onEmailBlur = () => {
     if (email.trim().length === 0) return;
@@ -174,15 +215,28 @@ export default function AccountScreen() {
     setConfirmError(confirmValid ? undefined : "Passwords don't match.");
   };
 
+  const onDobBlur = () => {
+    if (mode !== 'create' || dateOfBirth.trim().length === 0) return;
+    if (!isRealCalendarDate(dateOfBirth.trim())) {
+      setDobError('Enter a valid date of birth (YYYY-MM-DD).');
+      return;
+    }
+    setDobError(ageFromDateOfBirth(dateOfBirth.trim()) >= MIN_ACCOUNT_AGE_YEARS ? undefined : UNDER_18_MESSAGE);
+  };
+
   const handleSubmit = async () => {
     // Re-validate on submit (spec §4.1) and surface every failing field at once.
     const emailOk = emailValid;
     const passwordOk = passwordValid;
     const confirmOk = confirmValid;
+    const dobOk = mode === 'signin' || (dobRealDate && dobAdult);
     setEmailError(emailOk ? undefined : 'Enter a valid email address.');
     setPasswordError(passwordOk ? undefined : `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
     setConfirmError(mode === 'create' && !confirmOk ? "Passwords don't match." : undefined);
-    if (!emailOk || !passwordOk || !confirmOk || !consentValid) return;
+    if (mode === 'create') {
+      setDobError(!dobRealDate ? 'Enter a valid date of birth (YYYY-MM-DD).' : !dobAdult ? UNDER_18_MESSAGE : undefined);
+    }
+    if (!emailOk || !passwordOk || !confirmOk || !dobOk || !consentValid) return;
 
     setFormError(null);
     setSubmitting(true);
@@ -192,6 +246,7 @@ export default function AccountScreen() {
           ? await authApi.register({
               email: email.trim(),
               password,
+              dateOfBirth: dateOfBirth.trim(),
               tosAccepted: tosChecked,
               healthDataConsent: healthChecked,
             })
@@ -209,6 +264,11 @@ export default function AccountScreen() {
       if (err instanceof authApi.AuthApiError) {
         if (err.code === 'invalid_email') setEmailError(err.message);
         if (err.code === 'invalid_password') setPasswordError(err.message);
+        // Belt-and-suspenders: the client pre-checks date of birth, but the
+        // server is the actual enforcement point (e.g. a clock skewed client
+        // could pass its own check and still get rejected server-side).
+        if (err.code === 'invalid_date_of_birth') setDobError('Enter a valid date of birth (YYYY-MM-DD).');
+        if (err.code === 'under_18') setDobError(UNDER_18_MESSAGE);
       }
       setFormError(mapFormError(err));
     } finally {
@@ -365,6 +425,23 @@ export default function AccountScreen() {
             secureTextEntry
             autoCapitalize="none"
             autoComplete="new-password"
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
+            editable={!submitting}
+          />
+          <Spacer size={spacing.md} />
+          <TextField
+            label="Date of birth"
+            value={dateOfBirth}
+            onChangeText={(text) => {
+              setDateOfBirth(text);
+              if (dobError) setDobError(undefined);
+            }}
+            onBlur={onDobBlur}
+            error={dobError}
+            helper={dobError ? undefined : 'YYYY-MM-DD. Accounts require you to be 18 or older.'}
+            placeholder="1990-01-31"
+            autoComplete="birthdate-full"
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
             editable={!submitting}
