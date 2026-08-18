@@ -7,7 +7,8 @@
 --     `ON DELETE CASCADE`, so deleting the `users` row (Art. 17 erasure)
 --     removes everything without a hand-written fan-out query.
 --   * No plaintext secrets: passwords are Argon2id hashes, refresh tokens
---     and IPs are stored as SHA-256 hashes, never the raw value.
+--     are SHA-256 hashes, IPs are HMAC-SHA256 with a server-side pepper —
+--     never the raw value, and never an unsalted digest of it either.
 --   * MySQL 8.0+, InnoDB, utf8mb4. All timestamps are UTC.
 --   * Nested/computed snapshots (a Stack's generated items, its SafetyReport,
 --     a WorkoutProgram's sessions) are stored as JSON verbatim rather than
@@ -26,6 +27,12 @@ CREATE TABLE users (
   email              VARCHAR(320) NOT NULL,
   email_normalized   VARCHAR(320) GENERATED ALWAYS AS (LOWER(email)) STORED,
   email_verified_at  DATETIME(3) NULL,
+  -- 'deleted' is currently unreachable: the planned hard-purge is a literal
+  -- `DELETE FROM users`, which removes the row rather than transitioning it
+  -- to this status. It's reserved here in case the purge design lands on
+  -- anonymize-in-place instead of true delete — whichever is decided when
+  -- that job gets built determines whether this value is ever set (THEA-88
+  -- review, item 5, non-blocking).
   status             ENUM('active','suspended','pending_deletion','deleted') NOT NULL DEFAULT 'active',
   created_at         DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at         DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -70,7 +77,13 @@ CREATE TABLE sessions (
   user_id              CHAR(36) NOT NULL,
   refresh_token_hash   CHAR(64) NOT NULL, -- SHA-256 hex of the refresh token
   user_agent           VARCHAR(255) NULL,
-  ip_hash              CHAR(64) NULL,     -- SHA-256 hex of the client IP, never the raw IP
+  -- HMAC-SHA256(ip, SESSION_IP_PEPPER) hex, never a bare SHA-256(ip) and
+  -- never the raw IP. IPv4 space (~4.3B addresses) is small enough to brute
+  -- force offline from an unsalted digest alone, so a server-side secret
+  -- pepper (env var, not stored in this DB) is required for this column to
+  -- actually pseudonymize the address rather than just obscure it. Set at
+  -- the write site once the API layer exists (THEA-88 review, item 1).
+  ip_hash              CHAR(64) NULL,
   created_at           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   expires_at           DATETIME(3) NOT NULL,
   revoked_at           DATETIME(3) NULL,
@@ -95,13 +108,24 @@ CREATE TABLE consents (
   recorded_at   DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   KEY idx_consents_user_purpose (user_id, purpose, recorded_at),
-  CONSTRAINT fk_consents_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  CONSTRAINT fk_consents_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  -- Art. 9(2)(a) requires *explicit consent* specifically for special-
+  -- category (health) data — 'contract' or 'legal_obligation' aren't valid
+  -- bases for this purpose the way they can be for 'account'/'marketing'.
+  CONSTRAINT chk_consents_health_requires_consent CHECK (
+    purpose <> 'health_data_processing' OR legal_basis = 'consent'
+  )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Access / erasure / portability requests (Art. 15, 17, 20).
+-- Access / erasure / portability requests (Art. 15, 17, 20). This table is
+-- itself the evidence trail proving those requests were made and resolved,
+-- so unlike the other health/identity tables it must survive the user row
+-- being hard-deleted rather than cascade away with it — that would destroy
+-- the proof at the exact moment erasure completes. user_id -> NULL on
+-- delete, same depersonalise-not-destroy pattern as `audit_log`.
 CREATE TABLE data_subject_requests (
   id            CHAR(36) NOT NULL,
-  user_id       CHAR(36) NOT NULL,
+  user_id       CHAR(36) NULL,
   kind          ENUM('access','erasure','export') NOT NULL,
   status        ENUM('pending','completed','rejected') NOT NULL DEFAULT 'pending',
   requested_at  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -109,7 +133,7 @@ CREATE TABLE data_subject_requests (
   note          VARCHAR(500) NULL,
   PRIMARY KEY (id),
   KEY idx_dsr_user (user_id),
-  CONSTRAINT fk_dsr_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  CONSTRAINT fk_dsr_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Security/compliance audit trail. Survives a hard-delete of the user
@@ -121,6 +145,16 @@ CREATE TABLE audit_log (
   -- e.g. 'login_success', 'login_failed', 'password_changed',
   -- 'consent_granted', 'consent_revoked', 'data_exported', 'account_erased'
   event_type   VARCHAR(64) NOT NULL,
+  -- IDs, enums and counts only — NEVER personal data (an email, IP, name,
+  -- free-text note, etc). This table is deliberately exempt from the
+  -- cascade-on-delete that erases every other personal-data table (see
+  -- fk_audit_user below), specifically so it can prove an account existed
+  -- and was erased. That guarantee inverts if metadata ever holds PII: a
+  -- hard-delete would no longer erase it. There is no DB-level way to
+  -- constrain JSON shape here, so this is an API/logging-call-site
+  -- discipline, not something this migration can enforce — e.g. a
+  -- 'login_failed' event should log the resolved user_id (once known) or a
+  -- generic failure reason code, never the raw email/IP that was attempted.
   metadata     JSON NULL,
   created_at   DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
