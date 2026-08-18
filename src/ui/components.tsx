@@ -547,6 +547,7 @@ export function TextField({
   suffix,
   style,
   inputStyle,
+  onBlur,
   ...inputProps
 }: {
   label?: string;
@@ -563,6 +564,10 @@ export function TextField({
   suffix?: ReactNode;
   style?: StyleProp<ViewStyle>;
   inputStyle?: StyleProp<TextStyle>;
+  /** Fires after the internal focus-ring state updates — e.g. for
+   *  validate-on-blur (design spec THEA-97 §4.1: "on submit and on blur, not
+   *  on every keystroke"). Never replaces the field's own focus tracking. */
+  onBlur?: () => void;
 } & Pick<
   TextInputProps,
   | 'keyboardType'
@@ -575,6 +580,7 @@ export function TextField({
   | 'onSubmitEditing'
   | 'maxLength'
   | 'clearButtonMode'
+  | 'editable'
 >) {
   const theme = useTheme();
   const { color } = theme;
@@ -600,7 +606,10 @@ export function TextField({
           placeholder={placeholder}
           placeholderTextColor={color.textTertiary}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            setFocused(false);
+            onBlur?.();
+          }}
           style={[
             typography.body,
             { color: color.textPrimary, flex: 1 },

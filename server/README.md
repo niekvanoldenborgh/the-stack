@@ -1,10 +1,11 @@
-# the-stack — backend account/health schema (THEA-84a / THEA-87)
+# the-stack — backend account/health schema + auth API (THEA-84a/THEA-87, THEA-84c/THEA-90)
 
-This directory is the MySQL side of THEA-84 ("Backend Development"). It is
-**not** part of the Expo app — nothing here is imported by `app/` or `src/`,
-and it ships its own `package.json` so `mysql2` never touches the client
-bundle. See `AGENTS.md` for why `src/domain`/`src/engine` stay backend-free;
-this is the mirror rule in the other direction.
+This directory is the MySQL + API side of THEA-84 ("Backend Development"). It
+is **not** part of the Expo app — nothing here is imported by `app/` or
+`src/`, and it ships its own `package.json` so `mysql2`/`express`/`argon2`
+never touch the client bundle. See `AGENTS.md` for why `src/domain`/
+`src/engine` stay backend-free; this is the mirror rule in the other
+direction.
 
 ## Scope (owner-decided, THEA-84 interaction `89fc38e9`, answered 2026-08-18)
 
@@ -29,19 +30,94 @@ this is the mirror rule in the other direction.
 
 ```
 server/
-  package.json          — isolated deps (mysql2); npm install here, not at repo root
+  package.json          — isolated deps (mysql2, express, argon2, jsonwebtoken);
+                           npm install here, not at repo root
   db/migrations/
     001_init.sql         — full DDL, see inline comments for rationale
   scripts/migrate.mjs    — applies migrations/*.sql in order, tracked in schema_migrations
+  src/
+    config.mjs            — env-var loader (throws at boot if something required is missing)
+    db.mjs                 — mysql2 pool factory
+    app.mjs                — express app factory (no listen() — used directly by tests)
+    server.mjs             — process entrypoint: real pool + config + app.listen()
+    lib/
+      errors.mjs            — ApiError(status, code, message)
+      validation.mjs        — email/password shape rules (server-side source of truth)
+      password.mjs          — Argon2id hash/verify
+      tokens.mjs            — access-token JWT + refresh-token hashing + ip_hash HMAC
+    auth/
+      service.mjs           — register/login/refresh/logout/session-lookup business logic
+      store.mysql.mjs       — SQL implementation of the store interface service.mjs depends on
+      routes.mjs            — Express router + error handler mapping ApiError -> HTTP
+  test/
+    fakeAuthStore.mjs      — in-memory twin of store.mysql.mjs, same method names/shapes
+    *.test.mjs              — unit + HTTP-integration tests, run against the fake store
 ```
 
-Run it (once the DB is actually reachable from wherever you run it):
+Migrate (once the DB is actually reachable from wherever you run it):
 
 ```bash
 cd server
 npm install
 DB_HOST=... DB_PORT=... DB_USER=... DB_PASSWORD=... DB_NAME=... npm run migrate
 ```
+
+## Running the API
+
+```bash
+cd server
+npm install
+cp .env.example .env   # fill in DB_*, JWT_SECRET, SESSION_IP_PEPPER
+npm start               # node src/server.mjs, listens on PORT (default 3001)
+```
+
+```bash
+npm test                 # node --test "test/**/*.test.mjs" — no DB needed, see "Infra" below
+```
+
+### Endpoints (THEA-90, email+password only — see "Scope" above)
+
+All under `/api/auth`. Every error response is `{ "error": { "code": "...", "message": "..." } }`
+with a stable `code` the client can switch on (the create-account/sign-in
+screen's `Callout` copy, THEA-97 §4.4, is keyed off these).
+
+| Method & path | Body | Notes |
+|---|---|---|
+| `POST /register` | `{ email, password, tosAccepted, healthDataConsent }` | Both consent flags must be `true` — two separate `consents` rows, not one bundled checkbox (see `service.mjs` consent-purpose-mapping comment for why `tosAccepted` lands under `purpose='account'`, not a `'terms_of_service'` value the schema doesn't have). 201 + `{ user, accessToken, refreshToken, expiresIn }`. 409 `email_already_registered` on duplicate. |
+| `POST /login` | `{ email, password }` | 401 `invalid_credentials` for both "no such user" and "wrong password" — same message, deliberately (auth-enumeration hygiene). |
+| `POST /refresh` | `{ refreshToken }` | Rotates: the presented token is revoked and a new one issued, so a captured-but-unused refresh token stops working the moment the real client refreshes. 401 `invalid_refresh_token` if expired/revoked/unknown. |
+| `POST /logout` | `{ refreshToken }` | Revokes that session. 204, silently a no-op for an unknown token. |
+| `GET /me` | — (`Authorization: Bearer <accessToken>`) | 200 `{ user: { id, email, tosAccepted, healthDataConsent } }`, 401 `unauthorized` otherwise. |
+
+Access tokens are JWTs (`JWT_SECRET`, 15 min TTL). Refresh tokens are opaque
+random strings; only their SHA-256 hash is ever persisted (`sessions.refresh_token_hash`),
+matching design principle 3 below. `service.mjs` also exports
+`requireHealthConsent(store, userId)` — unused by these routes (register/
+login only touch `users`/`auth_identities`/`consents`) but ready for
+whichever future ticket writes to the Art. 9 health tables; see that
+function's doc comment and design principle 5.
+
+### What a real deploy needs (the open infra gap)
+
+The sandbox this was built in cannot reach the owner's MySQL host — same
+gap `scripts/migrate.mjs` already hit (see "Infra" above) — and there is no
+deploy target yet. To actually run this:
+
+1. **A runtime host** that can execute `node src/server.mjs` (any Node 20+
+   host — no native build step beyond `npm install`, `argon2` ships
+   prebuilt binaries for the common platforms).
+2. **Network path to the MySQL instance** `DB_HOST`/`DB_PORT` point at —
+   the same reachability gap blocking `npm run migrate` today.
+3. **Env vars**: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`,
+   `JWT_SECRET` (required — boot fails without it), `SESSION_IP_PEPPER`
+   (optional but should be set — see design principle 3), `TOS_POLICY_VERSION`,
+   `PORT`. Full list + generation hints in `.env.example`.
+4. **The migration must have actually been applied** (`npm run migrate`
+   from a host with DB access) before the API is pointed at that database.
+5. **Not yet decided/built, flagged, not solved here**: TLS termination /
+   reverse proxy in front of the API, CORS policy for the Expo web build to
+   call it cross-origin, and the mobile client's base-URL configuration
+   (`EXPO_PUBLIC_API_BASE_URL`, see `src/lib/api/auth.ts` in the app).
 
 It's idempotent at **statement** granularity, not just file granularity —
 `schema_migrations` records one row per successfully-applied statement
@@ -141,9 +217,10 @@ add a new migration file instead of editing an applied one.
 
 ## What this migration deliberately does not do
 
-- Does not implement the API/auth server itself (login endpoints, JWT/session
-  issuance, Argon2id hashing call site, OAuth callback handlers) — this
-  ticket (THEA-87 / THEA-84a) is schema only, per its title.
+- Register/login/refresh/logout/session-lookup are now implemented — see
+  "Running the API" above (THEA-90/THEA-84c). OAuth (Google/Apple) callback
+  handlers are still not built; the schema supports them
+  (`auth_identities.provider`) but no dev accounts exist yet to build against.
 - Does not implement the hard-purge job that actually removes a
   `deleted_at`-tombstoned user after the retention window.
 - Does not implement column-level encryption for the health tables. If the

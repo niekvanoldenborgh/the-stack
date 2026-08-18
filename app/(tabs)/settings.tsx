@@ -20,16 +20,22 @@ import { spacing, useTheme } from '../../src/ui/theme';
  * Summary/Logger/Results reading as fixed hierarchy. Grouping is unchanged;
  * only the anatomy is.
  *
- * The four data/account rows — Privacy, Manage Data, Lock App and Delete
+ * The account/data rows — Privacy, Manage Data, Lock App and Delete
  * Account — are handled with extra care: Lock App is non-destructive (it only
  * re-locks the disclaimer gate, keeping local data — see THEA-12a F1, which
  * is what made that guarantee actually true), while Privacy, Manage Data and
  * Delete Account carry legal/irreversible weight and are gated behind
  * compliance review (see THEA-12a) rather than shipping unreviewed copy.
  *
- * "Lock App", not "Log out": there is no account or sign-in anywhere in this
- * app (THEA-12a §0) and that label would promise protection the app does not
- * provide (THEA-12a F2).
+ * "Lock App", not "Log out": locking only re-gates the local disclaimer and
+ * keeps all local data (THEA-12a F2) — it is a different, non-destructive
+ * concept from signing out of the account below, and the two must never read
+ * as duplicates (THEA-97 §1.1). An account is now optional and additive
+ * (THEA-90 / THEA-84c) — the app remains fully usable anonymous/on-device,
+ * this section is "back up / sync", never a wall in front of the product.
+ * The bottom "Security" section (was "Account") kept its old name freed up
+ * for the new status row below, per THEA-97 §1.1's "Sign out ≠ Lock app ≠
+ * Delete account — three distinct, clearly-separated actions."
  */
 
 function Chevron() {
@@ -44,6 +50,7 @@ export default function SettingsScreen() {
   const profile = useAppStore((s) => s.profile);
   const settings = useAppStore((s) => s.settings);
   const updateProfile = useAppStore((s) => s.updateProfile);
+  const session = useAppStore((s) => s.session);
 
   const goalSummary =
     profile && profile.goals.length > 0
@@ -99,6 +106,26 @@ export default function SettingsScreen() {
     <Screen>
       <Spacer size={spacing.md} />
       <Display>Settings</Display>
+
+      <Section title="Account">
+        <List>
+          {session ? (
+            <ListItem
+              title={session.email}
+              detail="Signed in"
+              meta={<Chevron />}
+              onPress={() => router.push('/settings/account')}
+            />
+          ) : (
+            <ListItem
+              title="Create account or sign in"
+              detail="Back up your profile and sync across devices"
+              meta={<Chevron />}
+              onPress={() => router.push('/settings/account')}
+            />
+          )}
+        </List>
+      </Section>
 
       <Section title="Profile">
         <List>
@@ -160,7 +187,7 @@ export default function SettingsScreen() {
         </List>
       </Section>
 
-      <Section title="Account" last>
+      <Section title="Security" last>
         <List>
           <ListItem
             title="Lock app"

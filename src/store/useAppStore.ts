@@ -68,9 +68,25 @@ interface Settings {
 /** THEA-8 Summary screen — see `SUMMARY_SECTIONS` in app/(tabs)/index.tsx. */
 export const DEFAULT_SUMMARY_ORDER = ['overview', 'next_injection', 'levels', 'stack'];
 
+/**
+ * Signed-in account state (THEA-90 / THEA-84c). Entirely separate from
+ * `profile` — an account backs up/syncs the same local data, it doesn't
+ * replace it (design spec THEA-97 §1.1: "the account is additive"). Tokens
+ * come from `src/lib/api/auth.ts`; the access token is short-lived (15 min,
+ * server/README.md) and callers should treat a 401 from `me()`/any future
+ * authed call as "try `refresh()` with `refreshToken` before giving up".
+ */
+export interface Session {
+  userId: string;
+  email: string;
+  accessToken: string;
+  refreshToken: string;
+}
+
 interface AppState {
   hydrated: boolean;
   profile: UserProfile | null;
+  session: Session | null;
   stacks: Stack[];
   activeStackId: string | null;
   doseLogs: Record<string, DoseLog>;
@@ -83,6 +99,9 @@ interface AppState {
   settings: Settings;
 
   setHydrated: (value: boolean) => void;
+  setSession: (session: Session) => void;
+  /** Sign out. Non-destructive — see `Session` doc comment; local profile/stacks/logs are untouched. */
+  clearSession: () => void;
   saveProfile: (profile: UserProfile) => void;
   /**
    * Patches the profile and re-runs the safety engine over every saved stack.
@@ -146,6 +165,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       hydrated: false,
       profile: null,
+      session: null,
       stacks: [],
       activeStackId: null,
       doseLogs: {},
@@ -157,6 +177,10 @@ export const useAppStore = create<AppState>()(
       settings: DEFAULT_SETTINGS,
 
       setHydrated: (value) => set({ hydrated: value }),
+
+      setSession: (session) => set({ session }),
+
+      clearSession: () => set({ session: null }),
 
       saveProfile: (profile) => set({ profile }),
 
@@ -308,6 +332,7 @@ export const useAppStore = create<AppState>()(
       resetAll: () =>
         set({
           profile: null,
+          session: null,
           stacks: [],
           activeStackId: null,
           doseLogs: {},
@@ -395,6 +420,7 @@ export const useAppStore = create<AppState>()(
       },
       partialize: (state) => ({
         profile: state.profile,
+        session: state.session,
         stacks: state.stacks,
         activeStackId: state.activeStackId,
         doseLogs: state.doseLogs,
@@ -442,6 +468,10 @@ export function useHasOnboarded(): boolean {
   return useAppStore(
     (state) => Boolean(state.profile?.acceptedDisclaimerAt) && Boolean(state.profile?.acceptedTermsAt),
   );
+}
+
+export function useIsSignedIn(): boolean {
+  return useAppStore((state) => state.session !== null);
 }
 
 /** The next 14 days of scheduled doses across the active stack. */
