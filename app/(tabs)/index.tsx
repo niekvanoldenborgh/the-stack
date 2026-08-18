@@ -211,6 +211,7 @@ function NextInjectionSection({
         meta={`${peptide?.name ?? next.peptideId} · ${next.time}`}
         tone={color.onPrimary}
         metaTone={color.onPrimary}
+        eyebrowTone={color.onPrimary}
       />
 
       {remindersEnabled ? (

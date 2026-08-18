@@ -111,6 +111,7 @@ export function FocalMetric({
   meta,
   tone,
   metaTone,
+  eyebrowTone,
   children,
   style,
 }: {
@@ -127,15 +128,20 @@ export function FocalMetric({
   tone?: string;
   /** Colour for `meta`/`unit`; defaults to `textSecondary`. */
   metaTone?: string;
+  /** Colour for `eyebrow`; defaults to `theme.color.primary`. Pass
+   *  `theme.color.onPrimary` on a gradient hero, where `primary` is the
+   *  gradient's own stop colour and reads as invisible against it. */
+  eyebrowTone?: string;
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
   const theme = useTheme();
   const figureColor = tone ?? theme.color.textPrimary;
   const metaColor = metaTone ?? theme.color.textSecondary;
+  const eyebrowColor = eyebrowTone ?? theme.color.primary;
   return (
     <View style={style}>
-      {eyebrow ? <Caption color={theme.color.primary}>{eyebrow}</Caption> : null}
+      {eyebrow ? <Caption color={eyebrowColor}>{eyebrow}</Caption> : null}
       <Row align="flex-end" gap={spacing.xs} style={{ marginTop: eyebrow ? spacing.xs : 0 }}>
         <Text style={[typography.metric, { color: figureColor }]}>{value}</Text>
         {unit ? <Text style={[typography.data, { color: metaColor, marginBottom: 8 }]}>{unit}</Text> : null}
