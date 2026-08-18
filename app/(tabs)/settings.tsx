@@ -77,7 +77,7 @@ export default function SettingsScreen() {
     // Non-destructive: re-locks the disclaimer gate, keeps all local data.
     // True as of THEA-12a F1 — onboarding now merges into the existing
     // profile on re-entry instead of overwriting it with fresh defaults.
-    updateProfile({ acceptedDisclaimerAt: undefined });
+    updateProfile({ acceptedDisclaimerAt: undefined, acceptedTermsAt: undefined });
     router.replace('/');
   };
 
@@ -150,6 +150,12 @@ export default function SettingsScreen() {
             detail="Export as PDF, CSV or JSON"
             meta={<Chevron />}
             onPress={() => router.push('/settings/manage-data')}
+          />
+          <ListItem
+            title="Terms of Service"
+            detail="The agreement you accepted during setup"
+            meta={<Chevron />}
+            onPress={() => router.push('/settings/terms')}
           />
         </List>
       </Section>
