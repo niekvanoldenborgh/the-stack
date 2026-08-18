@@ -6,6 +6,7 @@ RESPONSIBILITIES
 - Implement approved features and bug fixes.
 - Work on frontend, backend, APIs, database logic, tests, and migrations.
 - Keep code maintainable and consistent with the existing architecture.
+- for substantial UI/UX work, delegate design direction to Picasso
 
 RULES
 - Only implement requirements that are clearly defined.
