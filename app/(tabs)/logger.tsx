@@ -4,13 +4,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getPeptide } from '../../src/domain/peptides';
 import { SEVERITY_MAX, SEVERITY_MIN, SIDE_EFFECT_OPTIONS, severityBand } from '../../src/domain/sideEffects';
-import type { Dose, DoseUnit, InjectionSite, Peptide } from '../../src/domain/types';
+import type { Dose, DoseUnit, InjectionSite, Peptide, PeptideClass } from '../../src/domain/types';
 import { concentration, formatDose, reconstitute } from '../../src/engine/dosing';
 import { formatShort, today } from '../../src/lib/date';
 import { useActiveStack, useAppStore } from '../../src/store/useAppStore';
 import { BodyFigure, INJECTION_SITE_LABELS } from '../../src/ui/BodyFigure';
 import {
-  Body,
   Button,
   Callout,
   Caption,
@@ -45,6 +44,11 @@ import { fonts, radius, spacing, useTheme, type SeverityTone, typography } from 
  * None of the underlying logic changed: every safety comment below (no
  * default unit, no default severity, warn-never-block on an over-max dose)
  * is carried over verbatim from the pre-redesign screen.
+ *
+ * THEA-83: the Compound picker is a tile grid instead of search + text list.
+ * Selection/dose/save logic is untouched — this only changes how a peptide
+ * gets picked. Per-class glyphs (THEA-82) aren't in yet — see the TODO on
+ * `PEPTIDE_TILE_GLYPH` below; until that spec lands, tiles show name only.
  */
 
 type Mode = 'injection' | 'side-effect';
@@ -56,6 +60,23 @@ const MODES: { key: Mode; label: string }[] = [
 
 /** Units a user can log an injection in. `pct` is topical-only, so excluded. */
 const DOSE_UNITS: DoseUnit[] = ['mcg', 'mg', 'iu'];
+
+/**
+ * Per-class recognition glyph for a Compound tile (THEA-83, spec pending in
+ * THEA-82). Deliberately empty until Picasso's per-`PeptideClass` mapping
+ * lands — do not invent glyphs here; a tile with no entry just shows its
+ * name. Keyed by class rather than by peptide so every compound is covered
+ * by data with no hand-maintained per-peptide list.
+ */
+const PEPTIDE_TILE_GLYPH: Partial<Record<PeptideClass, string>> = {};
+
+function tileGlyph(p: Peptide): string | null {
+  for (const cls of p.classes) {
+    const glyph = PEPTIDE_TILE_GLYPH[cls];
+    if (glyph) return glyph;
+  }
+  return null;
+}
 
 interface CtaState {
   label: string;
@@ -120,7 +141,6 @@ function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void
   const activeStack = useActiveStack();
 
   const [peptideId, setPeptideId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const [doseValue, setDoseValue] = useState('');
   // No default unit (P&S sign-off, THEA-9): the user picks every time, so a
   // stale pre-selection can never carry a mg/mcg mistake into the log.
@@ -150,19 +170,6 @@ function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void
     return list;
   }, [activeStack]);
 
-  const results = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const pool = q
-      ? stackPeptides.filter(
-          (p) =>
-            p.name.toLowerCase().includes(q) ||
-            p.id.includes(q) ||
-            p.aliases.some((a) => a.toLowerCase().includes(q)) ||
-            p.summary.toLowerCase().includes(q),
-        )
-      : stackPeptides;
-    return pool.slice(0, 8);
-  }, [search, stackPeptides]);
   const selectedPeptide = peptideId ? getPeptide(peptideId) : null;
 
   const doseNum = parseNumber(doseValue);
@@ -185,14 +192,13 @@ function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void
   const unitMismatch =
     selectedPeptide && doseUnit !== null && doseUnit !== selectedPeptide.dosing.unit;
 
-  const pickPeptide = (id: string) => {
-    setPeptideId(id);
-    setSearch('');
-  };
+  // Tiles are togglable (THEA-83): tapping the selected tile again clears the
+  // selection, same as the old "Change" affordance; tapping another tile
+  // switches straight to it.
+  const toggleSelect = (id: string) => setPeptideId((prev) => (prev === id ? null : id));
 
   const reset = () => {
     setPeptideId(null);
-    setSearch('');
     setDoseValue('');
     setDoseUnit(null);
     setDrawn('');
@@ -227,15 +233,7 @@ function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void
     <View>
       {/* Compound ----------------------------------------------------------- */}
       <Section title="Compound">
-        {selectedPeptide ? (
-          <Row justify="space-between">
-            <View style={{ flex: 1 }}>
-              <Body>{selectedPeptide.name}</Body>
-              <Small>{selectedPeptide.dosing.note}</Small>
-            </View>
-            <Button label="Change" variant="ghost" onPress={() => setPeptideId(null)} />
-          </Row>
-        ) : stackPeptides.length === 0 ? (
+        {stackPeptides.length === 0 ? (
           <EmptyState
             title="No active stack"
             body="Build a stack first — the logger only lists compounds you're actually running."
@@ -243,56 +241,70 @@ function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void
             illustration="noStack"
           />
         ) : (
-          <View>
-            <TextField
-              value={search}
-              onChangeText={setSearch}
-              placeholder={`Search ${stackPeptides.length} compound${stackPeptides.length === 1 ? '' : 's'} in your stack`}
-              autoCorrect={false}
-            />
-            {results.length > 0 ? (
-              <List style={{ marginTop: spacing.md }}>
-                {results.map((p) => (
-                  <ListItem key={p.id} title={p.name} detail={p.summary} onPress={() => pickPeptide(p.id)} />
-                ))}
-              </List>
-            ) : null}
+          <View style={styles.tileGrid}>
+            {stackPeptides.map((p) => {
+              const active = p.id === peptideId;
+              const glyph = tileGlyph(p);
+              return (
+                <Pressable
+                  key={p.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={p.name}
+                  accessibilityState={{ selected: active }}
+                  onPress={() => toggleSelect(p.id)}
+                  style={[
+                    styles.tile,
+                    { backgroundColor: active ? color.primary : color.surfaceMuted, borderColor: active ? color.primary : color.border },
+                  ]}
+                >
+                  {glyph ? <Text style={styles.tileGlyph}>{glyph}</Text> : null}
+                  <Text
+                    style={[typography.small, styles.tileLabel, { color: active ? color.onPrimary : color.textPrimary }]}
+                    numberOfLines={2}
+                  >
+                    {p.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         )}
       </Section>
 
       {/* Dose — user entered -------------------------------------------------- */}
-      <View style={{ marginBottom: spacing.xxl, gap: spacing.md }}>
-        <BigNumberField
-          label="Dose you injected"
-          value={doseValue}
-          onChangeText={setDoseValue}
-          units={DOSE_UNITS}
-          unit={doseUnit}
-          onUnitChange={(u) => setDoseUnit(u as DoseUnit)}
-        />
-        {unitMismatch && selectedPeptide ? (
-          <Callout tone="moderate">
-            {`Double-check the unit — ${selectedPeptide.name} is normally dosed in ${
-              selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
-            }, and you picked ${doseUnit === 'iu' ? 'IU' : doseUnit}. Logged as entered either way.`}
-          </Callout>
-        ) : null}
-        {overMax && selectedPeptide ? (
-          <Callout tone="moderate">
-            {`Above the published maximum for ${selectedPeptide.name}: ${selectedPeptide.dosing.hardMax} ${
-              selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
-            } (${selectedPeptide.sources[0] ?? 'compound reference'}). This is logged as entered — nothing here is blocked or corrected.`}
-          </Callout>
-        ) : null}
-        <TextField
-          label="Amount drawn (syringe units, optional)"
-          value={drawn}
-          onChangeText={setDrawn}
-          keyboardType="decimal-pad"
-          placeholder="e.g. 10"
-        />
-      </View>
+      {selectedPeptide ? (
+        <View style={{ marginBottom: spacing.xxl, gap: spacing.md }}>
+          <BigNumberField
+            label="Dose you injected"
+            value={doseValue}
+            onChangeText={setDoseValue}
+            units={DOSE_UNITS}
+            unit={doseUnit}
+            onUnitChange={(u) => setDoseUnit(u as DoseUnit)}
+          />
+          {unitMismatch ? (
+            <Callout tone="moderate">
+              {`Double-check the unit — ${selectedPeptide.name} is normally dosed in ${
+                selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
+              }, and you picked ${doseUnit === 'iu' ? 'IU' : doseUnit}. Logged as entered either way.`}
+            </Callout>
+          ) : null}
+          {overMax ? (
+            <Callout tone="moderate">
+              {`Above the published maximum for ${selectedPeptide.name}: ${selectedPeptide.dosing.hardMax} ${
+                selectedPeptide.dosing.unit === 'iu' ? 'IU' : selectedPeptide.dosing.unit
+              } (${selectedPeptide.sources[0] ?? 'compound reference'}). This is logged as entered — nothing here is blocked or corrected.`}
+            </Callout>
+          ) : null}
+          <TextField
+            label="Amount drawn (syringe units, optional)"
+            value={drawn}
+            onChangeText={setDrawn}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 10"
+          />
+        </View>
+      ) : null}
 
       {/* When & where --------------------------------------------------------- */}
       <Section title="When & where" gap={spacing.lg}>
@@ -680,6 +692,30 @@ function ReconstitutionCalculator() {
 }
 
 const styles = StyleSheet.create({
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  tile: {
+    flexBasis: '30%',
+    flexGrow: 1,
+    minHeight: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+  },
+  tileGlyph: {
+    fontSize: 22,
+  },
+  tileLabel: {
+    fontFamily: fonts.medium,
+    textAlign: 'center',
+  },
   unitPill: {
     minWidth: 44,
     alignItems: 'center',
