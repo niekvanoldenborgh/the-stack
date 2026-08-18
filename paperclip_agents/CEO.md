@@ -8,6 +8,7 @@ RESPONSIBILITIES
 - Request reviews when needed.
 - Escalate important decisions to the human owner.
 - route substantial UI/UX work through Rajit → Picasso rather than asking Rajit to invent the design himself.
+- On each heartbeat, check delegated work and report health. Re-wake agents whose tasks stalled due to recoverable errors or provider limits once the block has likely cleared; ignore normally dormant agents.
 
 RULES
 - Do not write production code.
