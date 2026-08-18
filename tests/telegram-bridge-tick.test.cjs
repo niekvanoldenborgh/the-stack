@@ -22,8 +22,8 @@ const { computeAutoRoute } = require('../ops/telegram-bridge/interactionRoute.cj
 const { detectSecondConsumer } = require('../ops/telegram-bridge/singleConsumerGuard.cjs');
 const { findNotifiableEvents, isHumanOnlyInteraction, isHumanUnblockOwner } = require('../ops/telegram-bridge/notifiableEvents.cjs');
 const { scanAndNotify, buildEventPayload, buildIssueUrl } = require('../ops/telegram-bridge/scan.cjs');
-const { pollAndRouteTick, routeUpdate } = require('../ops/telegram-bridge/poll.cjs');
-const { runBridgeTick, loadDotEnv, parseDotEnv } = require('../ops/telegram-bridge/runBridgeTick.cjs');
+const { pollAndRouteTick, routeUpdate, pollOnce, DEFAULT_CONNECT_TIMEOUT_MS } = require('../ops/telegram-bridge/poll.cjs');
+const { runBridgeTick, loadDotEnv, parseDotEnv, preferIpv4 } = require('../ops/telegram-bridge/runBridgeTick.cjs');
 
 const tmpStores = [];
 function tmpStorePath() {
@@ -472,22 +472,127 @@ describe('loadDotEnv / parseDotEnv (Node < 20.6 fallback)', () => {
 });
 
 describe('runBridgeTick', () => {
-  it('runs both halves and returns their results', async () => {
+  const baseEnv = {
+    TELEGRAM_BOT_TOKEN: 'token',
+    TELEGRAM_CHAT_ID: 'chat',
+    PAPERCLIP_API_URL: 'https://paper.example.test/api',
+    PAPERCLIP_API_KEY: 'key',
+    PAPERCLIP_COMPANY_ID: 'company-1',
+  };
+
+  it('runs both halves and returns their captured outcomes', async () => {
     const storePath = tmpStorePath();
-    const env = {
-      TELEGRAM_BOT_TOKEN: 'token',
-      TELEGRAM_CHAT_ID: 'chat',
-      PAPERCLIP_API_URL: 'https://paper.example.test/api',
-      PAPERCLIP_API_KEY: 'key',
-      PAPERCLIP_COMPANY_ID: 'company-1',
-    };
     const fetchImpl = async (url) => {
       const u = String(url);
       if (u.includes('api.telegram.org/bot')) return jsonResponse({ ok: true, result: [] });
       if (u.includes('/api/companies/company-1/issues')) return jsonResponse([]);
       throw new Error(`unexpected fetch: ${u}`);
     };
-    const result = await runBridgeTick({ env, fetchImpl, storePath });
-    assert.deepEqual(result, { inbound: [], outbound: [] });
+    const result = await runBridgeTick({ env: baseEnv, fetchImpl, storePath });
+    assert.deepEqual(result, { inbound: { ok: true, result: [] }, outbound: { ok: true, result: [] } });
+  });
+
+  it('still runs the outbound scan when the inbound poll throws (THEA-100)', async () => {
+    const storePath = tmpStorePath();
+    let scanRan = false;
+    const fetchImpl = async (url) => {
+      const u = String(url);
+      if (u.includes('api.telegram.org/bot') && u.includes('getUpdates')) throw new Error('fetch failed');
+      if (u.includes('/api/companies/company-1/issues')) {
+        scanRan = true;
+        return jsonResponse([]);
+      }
+      throw new Error(`unexpected fetch: ${u}`);
+    };
+    const result = await runBridgeTick({ env: baseEnv, fetchImpl, storePath });
+    assert.equal(scanRan, true);
+    assert.equal(result.inbound.ok, false);
+    assert.match(result.inbound.error.message, /fetch failed/);
+    assert.deepEqual(result.outbound, { ok: true, result: [] });
+  });
+
+  it('still runs the inbound poll when the outbound scan throws', async () => {
+    const storePath = tmpStorePath();
+    let pollRan = false;
+    const fetchImpl = async (url) => {
+      const u = String(url);
+      if (u.includes('api.telegram.org/bot') && u.includes('getUpdates')) {
+        pollRan = true;
+        return jsonResponse({ ok: true, result: [] });
+      }
+      if (u.includes('/api/companies/company-1/issues')) return jsonResponse({}, false, 401);
+      throw new Error(`unexpected fetch: ${u}`);
+    };
+    const result = await runBridgeTick({ env: baseEnv, fetchImpl, storePath });
+    assert.equal(pollRan, true);
+    assert.deepEqual(result.inbound, { ok: true, result: [] });
+    assert.equal(result.outbound.ok, false);
+    assert.match(result.outbound.error.message, /401/);
+  });
+
+  it('logs exactly one timestamped line per tick summarizing both halves', async () => {
+    const storePath = tmpStorePath();
+    const fetchImpl = async (url) => {
+      const u = String(url);
+      if (u.includes('api.telegram.org/bot') && u.includes('getUpdates')) throw new Error('boom');
+      if (u.includes('/api/companies/company-1/issues')) return jsonResponse([]);
+      throw new Error(`unexpected fetch: ${u}`);
+    };
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      await runBridgeTick({ env: baseEnv, fetchImpl, storePath, now: new Date('2026-08-18T12:00:00.000Z') });
+    } finally {
+      console.log = originalLog;
+    }
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0], '[telegram-bridge] 2026-08-18T12:00:00.000Z tick inbound=error: boom outbound=ok items=0');
+  });
+
+  it('does not log a stack trace unless TELEGRAM_BRIDGE_DEBUG is set', async () => {
+    const storePath = tmpStorePath();
+    const fetchImpl = async (url) => {
+      const u = String(url);
+      if (u.includes('api.telegram.org/bot') && u.includes('getUpdates')) throw new Error('boom');
+      if (u.includes('/api/companies/company-1/issues')) return jsonResponse([]);
+      throw new Error(`unexpected fetch: ${u}`);
+    };
+    const errors = [];
+    const originalError = console.error;
+    console.error = (...args) => errors.push(args);
+    try {
+      await runBridgeTick({ env: baseEnv, fetchImpl, storePath });
+      assert.equal(errors.length, 0);
+
+      await runBridgeTick({ env: { ...baseEnv, TELEGRAM_BRIDGE_DEBUG: '1' }, fetchImpl, storePath });
+      assert.equal(errors.length, 1);
+    } finally {
+      console.error = originalError;
+    }
+  });
+});
+
+describe('preferIpv4 (THEA-100)', () => {
+  it('forces ipv4-first DNS resolution on the given dns module', () => {
+    const calls = [];
+    preferIpv4({ setDefaultResultOrder: (order) => calls.push(order) });
+    assert.deepEqual(calls, ['ipv4first']);
+  });
+});
+
+describe('Telegram connect timeout (THEA-100)', () => {
+  it('aborts a hung getUpdates connect instead of letting it eat the whole tick', async () => {
+    assert.equal(typeof DEFAULT_CONNECT_TIMEOUT_MS, 'number');
+    assert.ok(DEFAULT_CONNECT_TIMEOUT_MS > 0);
+
+    const env = { TELEGRAM_BOT_TOKEN: 'token' };
+    let seenSignal;
+    const fetchImpl = async (url, opts) => {
+      seenSignal = opts && opts.signal;
+      return jsonResponse({ ok: true, result: [] });
+    };
+    await pollOnce({ timeoutSeconds: 1, fetchImpl, env, connectTimeoutMs: 5 });
+    assert.ok(seenSignal instanceof AbortSignal);
   });
 });

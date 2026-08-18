@@ -2,6 +2,11 @@
 # message/interaction mappings or secret values.
 .pending-store.json
 
+# Runtime log — see runBridgeTick.cjs's logTickOutcome. Rotate/inspect on
+# the host; never commit it (THEA-100 found an 891-failed-tick, 759KB copy
+# untracked in this repo before the compact one-line-per-tick logging).
+tick.log
+
 # Secrets: keep the .env alongside the code but never commit it.
 .env
 .env.*

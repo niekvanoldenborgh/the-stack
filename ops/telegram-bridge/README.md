@@ -32,7 +32,17 @@ const { runBridgeTick } = require('./runBridgeTick.cjs');
 await runBridgeTick(); // reads config from process.env
 ```
 
-Each tick does both halves, in order:
+Each tick does both halves. THEA-100: they run independently — one half
+throwing (a Telegram network hiccup, an expired API key) does not suppress
+the other, and `runBridgeTick` returns `{ ok, result }` / `{ ok, error }`
+for each rather than letting the first failure abort the tick. The
+process also forces IPv4-first DNS resolution and bounds every Telegram
+call with an explicit connect timeout (see "Known gaps" → superseded by
+THEA-100, and `poll.cjs`'s `DEFAULT_CONNECT_TIMEOUT_MS`), since
+`api.telegram.org` resolves AAAA-first and older Node (< 20.6, no undici
+Happy-Eyeballs fallback) can hang a whole tick on a IPv6-only answer with
+no IPv6 egress. Logging is one timestamped line per tick summarizing both
+halves' outcomes; full stack traces are gated behind `TELEGRAM_BRIDGE_DEBUG`.
 
 1. **Inbound** (`poll.cjs` → `pollAndRouteTick`) — fetch whatever Telegram
    updates arrived since the last tick's persisted offset, route each reply
@@ -113,6 +123,7 @@ stable, point `storePath` at a durable path instead of the module default.
 | `PAPERCLIP_COMPANY_ID` | outbound (company-wide issue scan) |
 | `PAPERCLIP_APP_BASE_URL` | outbound, optional — see gap below |
 | `TELEGRAM_BRIDGE_INSTANCE_ID` | inbound, optional — identifies this poller for the single-consumer guard; defaults to `hostname:pid` |
+| `TELEGRAM_BRIDGE_DEBUG` | optional — set to log full stack traces for a failed half in addition to the one-line tick summary |
 
 ## Human-only heuristics (worth re-checking, not a documented contract)
 

@@ -27,8 +27,9 @@
 
 const { buildNotificationMessage } = require('./formatNotification.cjs');
 const { recordPending } = require('./pendingStore.cjs');
+const { DEFAULT_CONNECT_TIMEOUT_MS } = require('./poll.cjs');
 
-async function sendNotification(event, { fetchImpl = fetch, env = process.env, storePath } = {}) {
+async function sendNotification(event, { fetchImpl = fetch, env = process.env, storePath, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS } = {}) {
   const token = env.TELEGRAM_BOT_TOKEN;
   const chatId = env.TELEGRAM_CHAT_ID;
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
@@ -40,6 +41,7 @@ async function sendNotification(event, { fetchImpl = fetch, env = process.env, s
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: false }),
+    signal: AbortSignal.timeout(connectTimeoutMs),
   });
 
   const body = await res.json();

@@ -14,16 +14,66 @@
  *   2. outbound — scan for issues/interactions newly needing a human and
  *      not yet notified, send one Telegram message each (scan.cjs).
  *
+ * THEA-100: the two halves are independent — one failing (a Telegram
+ * network hiccup, an expired API key, whatever) must not suppress the
+ * other. Each half is run to completion and its outcome captured rather
+ * than let a rejection from the first half skip the second one entirely.
+ *
  * Required env — see README.md "Config" for the full list (Telegram token,
  * Paperclip API credentials, company id).
  */
 
+const dns = require('node:dns');
+
 const { pollAndRouteTick } = require('./poll.cjs');
 const { scanAndNotify } = require('./scan.cjs');
 
-async function runBridgeTick({ env = process.env, fetchImpl = fetch, storePath } = {}) {
-  const inbound = await pollAndRouteTick({ env, fetchImpl, storePath });
-  const outbound = await scanAndNotify({ env, fetchImpl, storePath });
+// THEA-100: api.telegram.org resolves AAAA-first, and the VPS this runs on
+// is old enough (Node < 20.6) that undici does not fall back to IPv4
+// (Happy Eyeballs) when the AAAA answer has no IPv6 egress — every
+// connection attempt hangs until it times out. Force IPv4 resolution for
+// this whole process before any network call is made. Takes the `dns`
+// module as a param so tests can assert this without touching the real
+// process-wide resolver order.
+function preferIpv4(dnsModule = dns) {
+  dnsModule.setDefaultResultOrder('ipv4first');
+}
+preferIpv4();
+
+/** Run one half, converting a throw into a captured outcome instead of letting it abort the tick. */
+async function runHalf(fn) {
+  try {
+    return { ok: true, result: await fn() };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+function summarizeHalf(outcome) {
+  if (outcome.ok) {
+    const count = Array.isArray(outcome.result) ? outcome.result.length : undefined;
+    return count === undefined ? 'ok' : `ok items=${count}`;
+  }
+  const err = outcome.error;
+  return `error: ${(err && err.message) || String(err)}`;
+}
+
+// THEA-100: one timestamped line per tick, not a stack trace per failure —
+// 891 failed ticks previously grew tick.log to 759KB with no rotation.
+// Full stacks are still available, gated behind TELEGRAM_BRIDGE_DEBUG, for
+// when a one-line summary isn't enough to diagnose something new.
+function logTickOutcome({ inbound, outbound, env = process.env, now = new Date() }) {
+  console.log(`[telegram-bridge] ${now.toISOString()} tick inbound=${summarizeHalf(inbound)} outbound=${summarizeHalf(outbound)}`);
+  if (env.TELEGRAM_BRIDGE_DEBUG) {
+    if (!inbound.ok) console.error('[telegram-bridge] inbound stack', inbound.error);
+    if (!outbound.ok) console.error('[telegram-bridge] outbound stack', outbound.error);
+  }
+}
+
+async function runBridgeTick({ env = process.env, fetchImpl = fetch, storePath, now } = {}) {
+  const inbound = await runHalf(() => pollAndRouteTick({ env, fetchImpl, storePath }));
+  const outbound = await runHalf(() => scanAndNotify({ env, fetchImpl, storePath }));
+  logTickOutcome({ inbound, outbound, env, ...(now ? { now } : {}) });
   return { inbound, outbound };
 }
 
@@ -88,10 +138,17 @@ if (require.main === module) {
   // regardless of where cron's `cd` lands.
   loadDotEnv(require('node:path').join(__dirname, '.env'));
 
-  runBridgeTick().catch((err) => {
-    console.error('[telegram-bridge] tick failed', err);
+  // Each half already captures its own failure (see runHalf/logTickOutcome
+  // above) so this only fires for something outside both halves — a bug in
+  // the tick harness itself, not a Telegram/Paperclip hiccup. A per-half
+  // failure instead sets a non-zero exit code below, without a stack trace
+  // unless TELEGRAM_BRIDGE_DEBUG is set.
+  runBridgeTick().then(({ inbound, outbound }) => {
+    if (!inbound.ok || !outbound.ok) process.exitCode = 1;
+  }).catch((err) => {
+    console.error(`[telegram-bridge] ${new Date().toISOString()} tick crashed`, process.env.TELEGRAM_BRIDGE_DEBUG ? err : (err && err.message) || err);
     process.exit(1);
   });
 }
 
-module.exports = { runBridgeTick, loadDotEnv, parseDotEnv };
+module.exports = { runBridgeTick, loadDotEnv, parseDotEnv, preferIpv4 };

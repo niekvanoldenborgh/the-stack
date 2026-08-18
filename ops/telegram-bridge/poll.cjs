@@ -43,7 +43,13 @@ const HINT_REASONS = new Set(['no_pending_match', 'not_a_reply', 'unsupported_in
 const HINT_TEXT = "Couldn't match that — please use Reply on the question message.";
 const RESPOND_FAILURE_TEXT = 'Got your reply but could not save it — please try again in a bit.';
 
-async function pollOnce({ offset, timeoutSeconds = 30, fetchImpl = fetch, env = process.env } = {}) {
+// THEA-100: on the VPS (Node < 20.6, no undici Happy-Eyeballs fallback) a
+// stalled connect to api.telegram.org can otherwise hang past the tick's
+// whole one-minute budget. This bounds every Telegram call explicitly
+// rather than trusting the platform default.
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+
+async function pollOnce({ offset, timeoutSeconds = 30, fetchImpl = fetch, env = process.env, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS } = {}) {
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not set');
 
@@ -51,13 +57,16 @@ async function pollOnce({ offset, timeoutSeconds = 30, fetchImpl = fetch, env = 
   url.searchParams.set('timeout', String(timeoutSeconds));
   if (offset != null) url.searchParams.set('offset', String(offset));
 
-  const res = await fetchImpl(url.toString());
+  // Telegram's own long-poll can legitimately take up to `timeoutSeconds`;
+  // the extra `connectTimeoutMs` is slack for connect + response, not for
+  // more long-polling, so a hung socket still fails well inside a minute.
+  const res = await fetchImpl(url.toString(), { signal: AbortSignal.timeout(timeoutSeconds * 1000 + connectTimeoutMs) });
   const body = await res.json();
   if (!body.ok) throw new Error(`Telegram getUpdates failed: ${body.description || res.status}`);
   return body.result;
 }
 
-async function sendTelegramReply(text, { chatId, replyToMessageId, token, fetchImpl }) {
+async function sendTelegramReply(text, { chatId, replyToMessageId, token, fetchImpl, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS }) {
   if (!token || chatId == null) return; // no way to reply — e.g. in a unit test with no token
   const res = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
@@ -67,6 +76,7 @@ async function sendTelegramReply(text, { chatId, replyToMessageId, token, fetchI
       text,
       reply_to_message_id: replyToMessageId,
     }),
+    signal: AbortSignal.timeout(connectTimeoutMs),
   });
   const body = await res.json();
   if (!body.ok) {
@@ -74,7 +84,7 @@ async function sendTelegramReply(text, { chatId, replyToMessageId, token, fetchI
   }
 }
 
-async function routeUpdate(update, { fetchImpl = fetch, env = process.env, storePath } = {}) {
+async function routeUpdate(update, { fetchImpl = fetch, env = process.env, storePath, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS } = {}) {
   const pending = await getPendingMap({ storePath });
   const routed = mapReplyToInteraction(update, pending);
 
@@ -82,7 +92,7 @@ async function routeUpdate(update, { fetchImpl = fetch, env = process.env, store
   const chatId = message && message.chat && message.chat.id;
   const replyToMessageId = message && message.message_id;
   const token = env.TELEGRAM_BOT_TOKEN;
-  const ack = (text) => sendTelegramReply(text, { chatId, replyToMessageId, token, fetchImpl });
+  const ack = (text) => sendTelegramReply(text, { chatId, replyToMessageId, token, fetchImpl, connectTimeoutMs });
 
   if (!routed.ok) {
     if (HINT_REASONS.has(routed.reason)) await ack(HINT_TEXT);
@@ -162,17 +172,24 @@ async function runForever() {
  * `runForever`'s literal long-poll) so a single tick doesn't eat the whole
  * per-minute execution budget waiting on Telegram.
  */
-async function pollAndRouteTick({ fetchImpl = fetch, env = process.env, storePath, timeoutSeconds = 20, now = Date.now() } = {}) {
+async function pollAndRouteTick({
+  fetchImpl = fetch,
+  env = process.env,
+  storePath,
+  timeoutSeconds = 20,
+  connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
+  now = Date.now(),
+} = {}) {
   await guardSingleConsumer({ storePath, env, now });
 
   const offset = await getUpdateOffset({ storePath });
-  const updates = await pollOnce({ offset: offset ?? undefined, timeoutSeconds, fetchImpl, env });
+  const updates = await pollOnce({ offset: offset ?? undefined, timeoutSeconds, fetchImpl, env, connectTimeoutMs });
 
   const results = [];
   let nextOffset = offset;
   for (const update of updates) {
     nextOffset = update.update_id + 1;
-    const result = await routeUpdate(update, { fetchImpl, env, storePath });
+    const result = await routeUpdate(update, { fetchImpl, env, storePath, connectTimeoutMs });
     if (!result.ok && result.reason !== 'not_a_reply' && result.reason !== 'not_a_message') {
       console.warn('[telegram-bridge] unrouted update', update.update_id, result.reason);
     }
@@ -189,4 +206,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { pollOnce, routeUpdate, runForever, pollAndRouteTick };
+module.exports = { pollOnce, routeUpdate, runForever, pollAndRouteTick, DEFAULT_CONNECT_TIMEOUT_MS };
