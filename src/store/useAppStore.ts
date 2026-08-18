@@ -346,7 +346,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'the-stack-v1',
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => AsyncStorage),
       /**
        * v1 profiles predate the risk dial and current-use tracking. Default to
@@ -382,6 +382,17 @@ export const useAppStore = create<AppState>()(
        * back through onboarding once to accept the new Terms of Service
        * gate rather than being silently grandfathered in. The version bump
        * exists to document that intent, per AGENTS.md.
+       *
+       * v7→v8 (THEA-104) re-prompts for acceptance because the Terms of
+       * Service text materially changed (rev 3 — governing law, liability
+       * carve-outs, consumer-rights clause; see
+       * `src/content/termsOfService.ts`). Unlike v6→v7, this one needs an
+       * active patch: `acceptedTermsAt` is already populated for every user
+       * who passed through the v7 gate, so leaving it alone would silently
+       * carry forward acceptance of terms the user never saw. Clearing it
+       * here (via the store migration, not a one-off app-code overwrite) is
+       * the same mechanism THEA-93 documented — a material Terms change
+       * requires this bump, not a silent field overwrite.
        */
       migrate: (persisted, version) => {
         const state = persisted as {
@@ -416,6 +427,9 @@ export const useAppStore = create<AppState>()(
           state.settings = { ...state.settings, theme: 'system' };
         }
         // version < 7: no patch — see the v6→v7 note above.
+        if (version < 8 && state?.profile?.acceptedTermsAt) {
+          state.profile = { ...state.profile, acceptedTermsAt: undefined };
+        }
         return state as never;
       },
       partialize: (state) => ({
