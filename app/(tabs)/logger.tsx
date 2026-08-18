@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -47,8 +48,8 @@ import { fonts, radius, spacing, useTheme, type SeverityTone, typography } from 
  *
  * THEA-83: the Compound picker is a tile grid instead of search + text list.
  * Selection/dose/save logic is untouched — this only changes how a peptide
- * gets picked. Per-class glyphs (THEA-82) aren't in yet — see the TODO on
- * `PEPTIDE_TILE_GLYPH` below; until that spec lands, tiles show name only.
+ * gets picked. Per-class glyph is Picasso's THEA-82 spec — see
+ * `PEPTIDE_TILE_GLYPH` below.
  */
 
 type Mode = 'injection' | 'side-effect';
@@ -62,20 +63,40 @@ const MODES: { key: Mode; label: string }[] = [
 const DOSE_UNITS: DoseUnit[] = ['mcg', 'mg', 'iu'];
 
 /**
- * Per-class recognition glyph for a Compound tile (THEA-83, spec pending in
- * THEA-82). Deliberately empty until Picasso's per-`PeptideClass` mapping
- * lands — do not invent glyphs here; a tile with no entry just shows its
- * name. Keyed by class rather than by peptide so every compound is covered
- * by data with no hand-maintained per-peptide list.
+ * Per-class recognition glyph for a Compound tile — Picasso's THEA-82 spec.
+ * Monochrome Ionicons rather than emoji: emoji carry fixed multicolour fills
+ * (7 of 14 obvious choices land on a reserved severity/status hue) and can't
+ * invert to white on the selected purple fill. An icon inherits `color`
+ * instead, so it's collision-proof by construction. Keyed by class rather
+ * than by peptide so every compound is covered by data, not a hand-
+ * maintained per-peptide list.
  */
-const PEPTIDE_TILE_GLYPH: Partial<Record<PeptideClass, string>> = {};
+const PEPTIDE_TILE_GLYPH: Record<PeptideClass, keyof typeof Ionicons.glyphMap> = {
+  ghrh_analog: 'pulse',
+  ghrp_secretagogue: 'notifications',
+  growth_hormone: 'barbell',
+  igf: 'trending-up',
+  incretin: 'restaurant',
+  amylin: 'hourglass',
+  mitochondrial: 'battery-charging',
+  healing_repair: 'bandage',
+  thymic_immune: 'shield',
+  melanocortin: 'sunny',
+  bone_anabolic: 'body',
+  cosmetic_topical: 'sparkles',
+  sleep_neuro: 'moon',
+  metabolic_oral: 'nutrition',
+};
 
-function tileGlyph(p: Peptide): string | null {
+/** Defensive fallback so an unmapped future `PeptideClass` never crashes the tile. */
+const DEFAULT_TILE_GLYPH: keyof typeof Ionicons.glyphMap = 'ellipse-outline';
+
+function tileGlyph(p: Peptide): keyof typeof Ionicons.glyphMap {
   for (const cls of p.classes) {
     const glyph = PEPTIDE_TILE_GLYPH[cls];
     if (glyph) return glyph;
   }
-  return null;
+  return DEFAULT_TILE_GLYPH;
 }
 
 interface CtaState {
@@ -257,7 +278,13 @@ function InjectionLogger({ onCtaChange }: { onCtaChange: (cta: CtaState) => void
                     { backgroundColor: active ? color.primary : color.surfaceMuted, borderColor: active ? color.primary : color.border },
                   ]}
                 >
-                  {glyph ? <Text style={styles.tileGlyph}>{glyph}</Text> : null}
+                  <Ionicons
+                    name={glyph}
+                    size={26}
+                    color={active ? color.onPrimary : color.textPrimary}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no"
+                  />
                   <Text
                     style={[typography.small, styles.tileLabel, { color: active ? color.onPrimary : color.textPrimary }]}
                     numberOfLines={2}
@@ -700,7 +727,8 @@ const styles = StyleSheet.create({
   tile: {
     flexBasis: '30%',
     flexGrow: 1,
-    minHeight: 80,
+    minWidth: 96,
+    minHeight: 88,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
@@ -708,9 +736,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderWidth: 1,
     borderRadius: radius.md,
-  },
-  tileGlyph: {
-    fontSize: 22,
   },
   tileLabel: {
     fontFamily: fonts.medium,
