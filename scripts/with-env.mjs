@@ -19,8 +19,19 @@
  *
  * Dev/demo tooling only: it sets EXPO_PUBLIC_* toggles and launches expo. It
  * never touches app code, build output or anything shipped in production.
+ *
+ * Also runs a native-dependency preflight (THEA-99) before spawning: expo's
+ * web bundler loads lightningcss, whose platform binary is the one native
+ * dependency this repo's committed node_modules/ doesn't carry for every
+ * platform. Failing here gives a one-line "run npm install" fix instead of
+ * a cryptic Metro require-stack partway into a bundle.
  */
 import { spawn } from 'node:child_process';
+import { checkNativeDeps } from './check-native-deps.mjs';
+
+if (!checkNativeDeps()) {
+  process.exit(1);
+}
 
 const argv = process.argv.slice(2);
 

@@ -18,6 +18,20 @@ npx expo start
 
 Then scan the QR code with **Expo Go**, or press `a` for an Android emulator, `i` for an iOS simulator (macOS only), or `w` for the browser.
 
+### Windows / first-run
+
+`node_modules/` is committed to this repo, so a fresh clone *looks* installed — but the committed tree only carries native binaries for the platforms the team develops on (macOS arm64, Linux x64). It does not carry the Windows binary for `lightningcss` (Expo's web CSS transformer). **Run `npm install` before anything else, even on a fresh clone** — it fetches the binary for your platform from `package-lock.json`, which does list every platform.
+
+Skipping this shows up as a Metro error partway into the first bundle rather than at clone time, for any of:
+
+```bash
+npm run onboarding
+npm run demo
+npm run preview
+```
+
+`scripts/with-env.mjs`, which all three run through, checks that the current platform's native binary resolves before starting Metro and fails fast with a plain "run `npm install`" message if it doesn't.
+
 Verification:
 
 ```bash
