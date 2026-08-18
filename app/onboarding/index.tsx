@@ -14,6 +14,10 @@ import type {
   TrainingDaysPerWeek,
   UserProfile,
 } from '../../src/domain/types';
+import {
+  TERMS_OF_SERVICE_CHECKBOX_LABEL,
+  TERMS_OF_SERVICE_LINK_LABEL,
+} from '../../src/content/termsOfService';
 import { generateSchedule } from '../../src/engine/cycle';
 import { findGoalConflicts } from '../../src/engine/safety';
 import { addDays, today } from '../../src/lib/date';
@@ -97,6 +101,7 @@ export default function Onboarding() {
   const [accepted, setAccepted] = useState(false);
   const [acknowledgedNotMedical, setAcknowledgedNotMedical] = useState(false);
   const [acknowledgedSourcing, setAcknowledgedSourcing] = useState(false);
+  const [tosAccepted, setTosAccepted] = useState(false);
 
   const [age, setAge] = useState(existingProfile?.age ?? 28);
   const [sex, setSex] = useState<Sex>(existingProfile?.sex ?? 'male');
@@ -149,7 +154,7 @@ export default function Onboarding() {
   const canAdvance = (): boolean => {
     switch (step) {
       case 'disclaimer':
-        return accepted && acknowledgedNotMedical && acknowledgedSourcing;
+        return accepted && acknowledgedNotMedical && acknowledgedSourcing && tosAccepted;
       case 'goals':
         return goals.length > 0;
       case 'current':
@@ -175,6 +180,7 @@ export default function Onboarding() {
       currentPeptides: usingNow ? currentPeptides : [],
       riskTolerance,
       acceptedDisclaimerAt: new Date().toISOString(),
+      acceptedTermsAt: new Date().toISOString(),
     };
 
     if (existingProfile) {
@@ -228,6 +234,8 @@ export default function Onboarding() {
           setNotMedical={setAcknowledgedNotMedical}
           sourcing={acknowledgedSourcing}
           setSourcing={setAcknowledgedSourcing}
+          tosAccepted={tosAccepted}
+          setTosAccepted={setTosAccepted}
         />
       ) : null}
 
@@ -658,6 +666,8 @@ function DisclaimerStep({
   setNotMedical,
   sourcing,
   setSourcing,
+  tosAccepted,
+  setTosAccepted,
 }: {
   accepted: boolean;
   setAccepted: (v: boolean) => void;
@@ -665,9 +675,12 @@ function DisclaimerStep({
   setNotMedical: (v: boolean) => void;
   sourcing: boolean;
   setSourcing: (v: boolean) => void;
+  tosAccepted: boolean;
+  setTosAccepted: (v: boolean) => void;
 }) {
   const theme = useTheme();
   const { color } = theme;
+  const router = useRouter();
   return (
     <View>
       <Section gradient tone={3}>
@@ -715,6 +728,23 @@ function DisclaimerStep({
         description="Purity, concentration and sterility are not guaranteed for anything sold for research use."
         value={sourcing}
         onChange={setSourcing}
+        tone="critical"
+      />
+
+      <Spacer size={spacing.lg} />
+      <Pressable
+        onPress={() => router.push('/settings/terms')}
+        accessibilityRole="link"
+        style={{ marginBottom: spacing.sm }}
+      >
+        <Small muted={false} style={{ color: color.primary, textDecorationLine: 'underline' }}>
+          {TERMS_OF_SERVICE_LINK_LABEL}
+        </Small>
+      </Pressable>
+      <Toggle
+        label={TERMS_OF_SERVICE_CHECKBOX_LABEL}
+        value={tosAccepted}
+        onChange={setTosAccepted}
         tone="critical"
       />
     </View>
