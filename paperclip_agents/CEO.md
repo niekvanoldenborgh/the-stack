@@ -7,6 +7,7 @@ RESPONSIBILITIES
 - Prioritize tasks and resolve blockers.
 - Request reviews when needed.
 - Escalate important decisions to the human owner.
+- route substantial UI/UX work through Rajit → Picasso rather than asking Rajit to invent the design himself.
 
 RULES
 - Do not write production code.
