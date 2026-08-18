@@ -9,6 +9,7 @@ export default function Index() {
   const theme = useTheme();
   const hydrated = useAppStore((state) => state.hydrated);
   const acceptedAt = useAppStore((state) => state.profile?.acceptedDisclaimerAt);
+  const acceptedTermsAt = useAppStore((state) => state.profile?.acceptedTermsAt);
   const stackCount = useAppStore((state) => state.stacks.length);
 
   if (!hydrated) {
@@ -19,7 +20,11 @@ export default function Index() {
     );
   }
 
-  if (!acceptedAt) return <Redirect href="/onboarding" />;
+  // Both are stamped together in onboarding's finish() — checking both here
+  // (rather than trusting `acceptedAt` alone) is what makes the ToS gate
+  // (THEA-93) actually block, including for upgrading users whose profile
+  // predates it and so has `acceptedTermsAt` absent.
+  if (!acceptedAt || !acceptedTermsAt) return <Redirect href="/onboarding" />;
   // Onboarding finished but nothing was ever accepted — resume at the
   // recommendation rather than dropping into an empty dashboard.
   if (stackCount === 0) return <Redirect href="/recommendation" />;

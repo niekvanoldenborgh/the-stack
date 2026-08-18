@@ -120,6 +120,14 @@ export interface UserProfile {
   /** User confirmed they read and accepted the safety disclaimer. */
   acceptedDisclaimerAt?: string;
   /**
+   * User confirmed they read the Terms of Service / liability agreement
+   * (THEA-93). Stamped alongside `acceptedDisclaimerAt` in onboarding, but
+   * tracked separately: it answers a distinct question ("did the user
+   * accept this specific document") that compliance sign-off checks against
+   * independently of the general safety disclaimer.
+   */
+  acceptedTermsAt?: string;
+  /**
    * A numeric target for one tracked metric, set entirely by the user on the
    * Results screen. The app never suggests or judges a value here — see the
    * doc comment on `Metric` in `domain/metrics.ts` — it only measures the

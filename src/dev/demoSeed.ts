@@ -110,6 +110,7 @@ export function seedDemoData(store: Store): void {
     riskTolerance: 3,
     // Set so app/index.tsx routes past onboarding straight into the tabs.
     acceptedDisclaimerAt: createdAt,
+    acceptedTermsAt: createdAt,
   };
   getState().saveProfile(profile);
 

@@ -321,7 +321,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'the-stack-v1',
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => AsyncStorage),
       /**
        * v1 profiles predate the risk dial and current-use tracking. Default to
@@ -349,6 +349,14 @@ export const useAppStore = create<AppState>()(
        * vestigial. Reset every persisted preference to `'system'` rather
        * than honouring a stale `'dark'` value, so no existing user is
        * silently switched into a real dark theme they never chose.
+       *
+       * v6→v7 (THEA-93) adds `UserProfile.acceptedTermsAt`. No patch is
+       * needed here — the field is optional and simply absent on every
+       * pre-v7 profile, which is the intended behaviour: `useHasOnboarded`
+       * and the `/` redirect both require it, so upgrading users are sent
+       * back through onboarding once to accept the new Terms of Service
+       * gate rather than being silently grandfathered in. The version bump
+       * exists to document that intent, per AGENTS.md.
        */
       migrate: (persisted, version) => {
         const state = persisted as {
@@ -382,6 +390,7 @@ export const useAppStore = create<AppState>()(
         if (version < 6 && state?.settings) {
           state.settings = { ...state.settings, theme: 'system' };
         }
+        // version < 7: no patch — see the v6→v7 note above.
         return state as never;
       },
       partialize: (state) => ({
@@ -430,7 +439,9 @@ export function useActiveStack(): Stack | null {
 }
 
 export function useHasOnboarded(): boolean {
-  return useAppStore((state) => Boolean(state.profile?.acceptedDisclaimerAt));
+  return useAppStore(
+    (state) => Boolean(state.profile?.acceptedDisclaimerAt) && Boolean(state.profile?.acceptedTermsAt),
+  );
 }
 
 /** The next 14 days of scheduled doses across the active stack. */
