@@ -100,7 +100,16 @@ export function SafetyReportView({
               <Caption>Overall risk</Caption>
               <Title style={{ marginTop: spacing.xs }}>{band.label}</Title>
             </View>
-            <Display style={{ color: bandTone === 'accent' ? theme.color.primary : theme.tone('moderate').fg }}>
+            <Display
+              style={{
+                color:
+                  bandTone === undefined
+                    ? theme.color.textPrimary
+                    : bandTone === 'accent'
+                      ? theme.color.primary
+                      : theme.tone(bandTone).fg,
+              }}
+            >
               {band.riskScore}
             </Display>
           </Row>
