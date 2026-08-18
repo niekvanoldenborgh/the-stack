@@ -1,0 +1,13 @@
+{
+  "name": "the-stack-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend/account-schema tooling for the-stack. Not bundled into the Expo app — see server/README.md.",
+  "type": "module",
+  "scripts": {
+    "migrate": "node scripts/migrate.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.23.3"
+  }
+}
