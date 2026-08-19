@@ -97,11 +97,12 @@ login only touch `users`/`auth_identities`/`consents`) but ready for
 whichever future ticket writes to the Art. 9 health tables; see that
 function's doc comment and design principle 5.
 
-### Running it with Docker (THEA-84d)
+### Running it with Docker (THEA-84d, networking fixed in THEA-111)
 
 ```bash
-cp .env.example .env   # fill in DB_*, JWT_SECRET, SESSION_IP_PEPPER
-cd ..                  # docker-compose.yml lives at the repo root
+cd ..                                  # docker-compose.yml lives at the repo root
+cp .env.example .env                   # fill in MYSQL_NETWORK_NAME (see below)
+cp server/.env.example server/.env     # DB_HOST=mysql + DB_*, JWT_SECRET, SESSION_IP_PEPPER
 docker compose up --build
 ```
 
@@ -118,10 +119,26 @@ Two services, one image (`server/Dockerfile`):
   as its container healthcheck.
 
 This still does not run MySQL itself — see "Scope" above, the owner's
-instance is external. `DB_HOST` in `server/.env` has to resolve from
-wherever the containers run; `docker compose up` on a host with no network
-path to that instance fails at the `migrate` step with the same
-`ECONNREFUSED`/timeout this doc already describes for the non-Docker case.
+instance runs in its own separate `mysql` container.
+
+**`DB_HOST` must be `mysql` (the container/service name), not `127.0.0.1` or
+`localhost`.** Inside the `migrate`/`api` containers, 127.0.0.1 is that
+container itself — pointing at it as "the database" always fails with
+`ECONNREFUSED`, whether or not MySQL is reachable at all. `server/.env.example`
+now ships `DB_HOST=mysql` as the default for exactly this reason.
+
+A hostname only resolves between containers on the same docker network,
+though, and `migrate`/`api` don't automatically share one with a MySQL
+container the owner runs separately. `docker-compose.yml` declares a
+top-level `mysql_net` network (`external: true`, meaning compose expects it
+to already exist rather than creating it) and joins both `migrate` and `api`
+to it, in addition to their normal default network. Its real name comes from
+`MYSQL_NETWORK_NAME` in the repo-root `.env` (see root `.env.example`) — find
+it with `docker network ls` / `docker inspect <mysql-container>` on the host
+running the owner's `mysql` container. Left at the shipped placeholder,
+`docker compose up` fails fast with a "network ... not found" error instead
+of silently retrying 127.0.0.1 — that's the intended failure mode until the
+real network name is supplied.
 
 ### What a real deploy still needs (open infra gaps, docker-compose does not solve these)
 
@@ -134,7 +151,11 @@ path to that instance fails at the `migrate` step with the same
    `JWT_SECRET` (required — boot fails without it), `SESSION_IP_PEPPER`
    (optional but should be set — see design principle 3), `TOS_POLICY_VERSION`,
    `PORT`. Full list + generation hints in `.env.example`; `docker-compose.yml`
-   reads them from `server/.env` via `env_file`.
+   reads them from `server/.env` via `env_file`. Plus, for Docker, the
+   compose-level (not container-level) `MYSQL_NETWORK_NAME` in the
+   repo-root `.env` — see "Running it with Docker" above; this one still
+   has no real value until the owner supplies their `mysql` container's
+   network name.
 3. **The app's base URL**: `EXPO_PUBLIC_API_BASE_URL` (`src/lib/api/auth.ts`)
    now has a documented, gitignored home — root `.env.example` — but it is
    still a value someone has to point at wherever `api` actually ends up

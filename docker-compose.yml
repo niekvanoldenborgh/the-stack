@@ -1,9 +1,11 @@
 # Deploy glue for the auth API (THEA-84d / THEA-110). This does NOT run a
 # database — server/README.md "Scope" documents that the owner already has a
-# MySQL instance running elsewhere; point DB_HOST at it via server/.env (copy
-# server/.env.example). Nothing here containerizes MySQL itself.
+# MySQL instance running elsewhere, in its own container named `mysql` on a
+# docker network this compose file doesn't own. Nothing here containerizes
+# MySQL itself.
 #
 # Usage:
+#   cp .env.example .env                 # fill in MYSQL_NETWORK_NAME (see below)
 #   cp server/.env.example server/.env   # fill in DB_*, JWT_SECRET, SESSION_IP_PEPPER
 #   docker compose up --build
 #
@@ -16,6 +18,28 @@
 # Re-running `docker compose up` is safe: migrate.mjs is idempotent at
 # per-statement granularity (server/README.md), so a healthy re-run applies
 # nothing and exits 0 immediately.
+#
+# Networking (THEA-111): `DB_HOST=127.0.0.1` in server/.env never works here
+# — inside the `migrate`/`api` containers, 127.0.0.1 is that container
+# itself, not the owner's `mysql` container, so the correct value is
+# `DB_HOST=mysql` (the container/service name — see server/.env.example).
+# But a hostname only resolves between containers that share a docker
+# network, and by default compose puts every service in this file on its
+# own private "default" network, which the owner's separately-run `mysql`
+# container is not part of. `MYSQL_NETWORK_NAME` below is the name of the
+# *existing* docker network the owner's `mysql` container already sits on;
+# `migrate` and `api` join it in addition to (not instead of) the default
+# network, so `DB_HOST=mysql` resolves while `migrate`<->`api` coordination
+# (depends_on, healthcheck) keeps working exactly as before.
+#
+# `external: true` means compose expects this network to already exist — it
+# will not create or manage it, since it belongs to the owner's separate
+# mysql deployment. Until MYSQL_NETWORK_NAME is set to the real network name
+# (ask the owner / `docker network ls` on the host running `mysql`),
+# `docker compose up` fails fast with a "network ... not found" error rather
+# than silently connecting to the wrong network or falling back to
+# 127.0.0.1 — that's intentional; the placeholder default below is not
+# expected to exist anywhere.
 services:
   migrate:
     build:
@@ -23,6 +47,9 @@ services:
     command: ["node", "scripts/migrate.mjs"]
     env_file:
       - server/.env
+    networks:
+      - default
+      - mysql_net
     restart: "no"
 
   api:
@@ -39,6 +66,9 @@ services:
       PORT: ${PORT:-3001}
     ports:
       - '${PORT:-3001}:${PORT:-3001}'
+    networks:
+      - default
+      - mysql_net
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -57,3 +87,15 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+
+networks:
+  # Explicit so it's still created/used for migrate<->api even though a
+  # custom `mysql_net` network is also declared below — compose only
+  # auto-creates the implicit default network when no top-level `networks:`
+  # block is present at all.
+  default: {}
+  # The owner's existing MySQL container's network. Not created or managed
+  # here (`external: true`); see the file header comment above.
+  mysql_net:
+    name: ${MYSQL_NETWORK_NAME:-CHANGE_ME_mysql_network_not_set}
+    external: true
