@@ -10,11 +10,20 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# argon2's musl N-API prebuild (node_modules/argon2/prebuilds/linux-x64/argon2.musl.node)
+# is NOT self-contained: it dlopens libstdc++.so.6 (which pulls in libgcc_s.so.1
+# as a dependency), and node:20-alpine ships neither. Without this the api
+# process segfaults (exit 139) the instant src/lib/password.mjs requires
+# argon2 (THEA-114). apk pulls from the alpine CDN at build time — same
+# egress the base-image pull already uses, no npm registry involved.
+RUN apk add --no-cache libstdc++
+
 # Deps are vendored, not installed: node_modules is git-tracked and complete
 # (THEA-112), so the build needs no npm-registry egress. argon2 — the only
 # native dep — ships an N-API prebuild covering linux-x64/arm64 musl
-# (node_modules/argon2/prebuilds), which is what alpine needs, so there's no
-# install/compile step. package.json is still copied for metadata/resolution.
+# (node_modules/argon2/prebuilds); the prebuild itself needs no compile step,
+# but it does need the OS-level libstdc++/libgcc runtime installed above.
+# package.json is still copied for metadata/resolution.
 COPY package.json package-lock.json ./
 COPY node_modules ./node_modules
 
