@@ -73,8 +73,9 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      # No curl/wget in node:20-alpine by default; Node 20 ships a global
-      # fetch, so this avoids adding a package just for the healthcheck.
+      # No curl/wget in the node:20-bookworm-slim base image by default;
+      # Node 20 ships a global fetch, so this avoids adding a package just
+      # for the healthcheck.
       test:
         [
           'CMD',

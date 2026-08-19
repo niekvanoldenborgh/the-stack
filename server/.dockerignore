@@ -1,8 +1,9 @@
 # node_modules is intentionally NOT excluded: it's git-tracked and vendored
 # into the image so the build needs no npm-registry egress (THEA-112). The
-# only native dep, argon2, ships N-API prebuilds for linux-x64/arm64 musl;
-# those prebuilds still link the OS-level libstdc++/libgcc runtime, which the
-# Dockerfile installs via apk (THEA-114) — see Dockerfile.
+# only native dep, argon2, ships N-API prebuilds for linux-x64/arm64 covering
+# both glibc and musl; the Dockerfile runs on a glibc base (node:20-bookworm-
+# slim, THEA-114) specifically so node-gyp-build resolves the glibc prebuild,
+# which needs no extra OS packages — see Dockerfile.
 test
 .env
 .env.*

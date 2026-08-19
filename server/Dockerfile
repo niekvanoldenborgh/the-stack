@@ -3,26 +3,25 @@
 # `node scripts/migrate.mjs` for the one-shot migration job instead of
 # maintaining a second Dockerfile that would drift from this one.
 #
-# node:20-alpine (not -slim/-bullseye): argon2's vendored prebuilds
-# (node_modules/argon2/prebuilds) ship both glibc and musl `.node` binaries
-# for linux-x64/arm64, so alpine's musl libc is covered without a build step.
-FROM node:20-alpine
+# node:20-bookworm-slim, not -alpine (THEA-114 re-diagnosis): argon2 ships
+# N-API prebuilds for both glibc and musl linux-x64/arm64
+# (node_modules/argon2/prebuilds), so either libc works in principle. But
+# alpine's musl prebuild (argon2.musl.node) dlopens libstdc++.so.6 (which
+# pulls in libgcc_s.so.1), and node:20-alpine ships neither — installing just
+# libstdc++ via apk (the first fix attempt, e0e09e29) still segfaulted (exit
+# 139) on api startup, so the musl prebuild itself is bad on this base image,
+# not merely missing a runtime lib. Moving to a glibc base makes node-gyp-build
+# resolve the far-better-exercised argon2.glibc.node instead, with no apk/
+# build-toolchain step needed.
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-# argon2's musl N-API prebuild (node_modules/argon2/prebuilds/linux-x64/argon2.musl.node)
-# is NOT self-contained: it dlopens libstdc++.so.6 (which pulls in libgcc_s.so.1
-# as a dependency), and node:20-alpine ships neither. Without this the api
-# process segfaults (exit 139) the instant src/lib/password.mjs requires
-# argon2 (THEA-114). apk pulls from the alpine CDN at build time — same
-# egress the base-image pull already uses, no npm registry involved.
-RUN apk add --no-cache libstdc++
-
 # Deps are vendored, not installed: node_modules is git-tracked and complete
 # (THEA-112), so the build needs no npm-registry egress. argon2 — the only
-# native dep — ships an N-API prebuild covering linux-x64/arm64 musl
-# (node_modules/argon2/prebuilds); the prebuild itself needs no compile step,
-# but it does need the OS-level libstdc++/libgcc runtime installed above.
+# native dep — ships an N-API prebuild covering linux-x64/arm64 glibc
+# (node_modules/argon2/prebuilds); the prebuild needs no compile step and,
+# on this glibc base, no extra OS packages either (see header comment above).
 # package.json is still copied for metadata/resolution.
 COPY package.json package-lock.json ./
 COPY node_modules ./node_modules
