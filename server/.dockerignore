@@ -1,0 +1,9 @@
+# Keep the build context small and force a clean `npm ci` inside the image
+# instead of shipping this host's committed (possibly other-platform)
+# node_modules — see Dockerfile.
+node_modules
+test
+.env
+.env.*
+*.log
+npm-debug.log*

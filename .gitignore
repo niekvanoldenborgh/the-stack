@@ -1,3 +1,12 @@
 # Web export output for `npm run preview` (scripts/serve-preview.mjs) — a
 # rebuildable artifact, not source.
 /dist/
+
+# Filled-in secrets (DB credentials, JWT_SECRET, ...). Matches at every
+# depth, so this covers both a root .env (app config, .env.example) and
+# server/.env (auth API config, server/.env.example) without two entries.
+# The .example templates are unaffected — this is an exact-name match, not
+# a prefix.
+.env
+.env.local
+.env.*.local

@@ -46,6 +46,22 @@ Regenerate app icons after editing `assets/brand/logo.svg`:
 npm run icons
 ```
 
+### Running the backend
+
+The auth API lives in `server/` — a separate `npm install`, deliberately
+kept out of the client bundle (see `AGENTS.md` "Layering"). Bring it up
+with Docker Compose from the repo root:
+
+```bash
+cp server/.env.example server/.env   # fill in DB_*, JWT_SECRET, SESSION_IP_PEPPER
+cp .env.example .env                 # EXPO_PUBLIC_API_BASE_URL for the app
+docker compose up --build
+```
+
+This applies pending migrations and starts the API against them (never the
+other way around); see `server/README.md` for what it still doesn't solve
+(a reachable MySQL host, TLS, CORS).
+
 ---
 
 ## What it does

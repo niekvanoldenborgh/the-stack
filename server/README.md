@@ -97,27 +97,56 @@ login only touch `users`/`auth_identities`/`consents`) but ready for
 whichever future ticket writes to the Art. 9 health tables; see that
 function's doc comment and design principle 5.
 
-### What a real deploy needs (the open infra gap)
+### Running it with Docker (THEA-84d)
 
-The sandbox this was built in cannot reach the owner's MySQL host — same
-gap `scripts/migrate.mjs` already hit (see "Infra" above) — and there is no
-deploy target yet. To actually run this:
+```bash
+cp .env.example .env   # fill in DB_*, JWT_SECRET, SESSION_IP_PEPPER
+cd ..                  # docker-compose.yml lives at the repo root
+docker compose up --build
+```
 
-1. **A runtime host** that can execute `node src/server.mjs` (any Node 20+
-   host — no native build step beyond `npm install`, `argon2` ships
-   prebuilt binaries for the common platforms).
-2. **Network path to the MySQL instance** `DB_HOST`/`DB_PORT` point at —
-   the same reachability gap blocking `npm run migrate` today.
-3. **Env vars**: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`,
+Two services, one image (`server/Dockerfile`):
+
+- `migrate` runs `node scripts/migrate.mjs` and exits. It's idempotent at
+  statement granularity (see below), so re-running `docker compose up` after
+  the schema is already current applies nothing and exits 0 immediately —
+  safe to leave in the startup path rather than a manual step someone has
+  to remember.
+- `api` runs `node src/server.mjs` and only starts once `migrate` exits 0
+  (`depends_on: condition: service_completed_successfully`), so the API can
+  never come up pointed at an unmigrated schema. It exposes `GET /healthz`
+  as its container healthcheck.
+
+This still does not run MySQL itself — see "Scope" above, the owner's
+instance is external. `DB_HOST` in `server/.env` has to resolve from
+wherever the containers run; `docker compose up` on a host with no network
+path to that instance fails at the `migrate` step with the same
+`ECONNREFUSED`/timeout this doc already describes for the non-Docker case.
+
+### What a real deploy still needs (open infra gaps, docker-compose does not solve these)
+
+1. **A host to run `docker compose up` on** that also has network access to
+   the owner's MySQL instance — docker-compose packages the *how*, not a
+   place to run it. The agent sandbox this was built in has neither Docker
+   nor a path to that DB, so this stack is untested against a live database;
+   `server/test/` covers behaviour, not deployability.
+2. **Env vars**: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`,
    `JWT_SECRET` (required — boot fails without it), `SESSION_IP_PEPPER`
    (optional but should be set — see design principle 3), `TOS_POLICY_VERSION`,
-   `PORT`. Full list + generation hints in `.env.example`.
-4. **The migration must have actually been applied** (`npm run migrate`
-   from a host with DB access) before the API is pointed at that database.
-5. **Not yet decided/built, flagged, not solved here**: TLS termination /
-   reverse proxy in front of the API, CORS policy for the Expo web build to
-   call it cross-origin, and the mobile client's base-URL configuration
-   (`EXPO_PUBLIC_API_BASE_URL`, see `src/lib/api/auth.ts` in the app).
+   `PORT`. Full list + generation hints in `.env.example`; `docker-compose.yml`
+   reads them from `server/.env` via `env_file`.
+3. **The app's base URL**: `EXPO_PUBLIC_API_BASE_URL` (`src/lib/api/auth.ts`)
+   now has a documented, gitignored home — root `.env.example` — but it is
+   still a value someone has to point at wherever `api` actually ends up
+   reachable (LAN IP for a simulator/device talking to a local
+   `docker compose up`, a real domain once one exists). Nothing computes
+   this automatically.
+4. **Not yet decided/built, still flagged, still not solved by this ticket**:
+   TLS termination / reverse proxy in front of the API (`api` is plain HTTP
+   on `:3001`), and CORS — `app.mjs` sets no `Access-Control-*` headers at
+   all, so an Expo *web* build calling this cross-origin will be blocked by
+   the browser until an explicit allowed-origins policy is decided (native
+   iOS/Android callers are unaffected; CORS is a browser-only mechanism).
 
 It's idempotent at **statement** granularity, not just file granularity —
 `schema_migrations` records one row per successfully-applied statement

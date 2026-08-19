@@ -1,0 +1,59 @@
+# Deploy glue for the auth API (THEA-84d / THEA-110). This does NOT run a
+# database — server/README.md "Scope" documents that the owner already has a
+# MySQL instance running elsewhere; point DB_HOST at it via server/.env (copy
+# server/.env.example). Nothing here containerizes MySQL itself.
+#
+# Usage:
+#   cp server/.env.example server/.env   # fill in DB_*, JWT_SECRET, SESSION_IP_PEPPER
+#   docker compose up --build
+#
+# `migrate` applies server/db/migrations/*.sql and exits; `api` only starts
+# once that exits 0 (`service_completed_successfully`), so the API can never
+# come up against an unmigrated schema. Both run the same image
+# (server/Dockerfile) — the migration step needs no code the API image
+# doesn't already have, so a second Dockerfile would just be drift risk.
+#
+# Re-running `docker compose up` is safe: migrate.mjs is idempotent at
+# per-statement granularity (server/README.md), so a healthy re-run applies
+# nothing and exits 0 immediately.
+services:
+  migrate:
+    build:
+      context: ./server
+    command: ["node", "scripts/migrate.mjs"]
+    env_file:
+      - server/.env
+    restart: "no"
+
+  api:
+    build:
+      context: ./server
+    command: ["node", "src/server.mjs"]
+    env_file:
+      - server/.env
+    environment:
+      # env_file values are overridable at `docker compose run` time; this
+      # gives PORT a default so `ports:` below has something to map even if
+      # server/.env leaves it unset (config.mjs itself already defaults to
+      # 3001 — this just keeps the two in sync without hardcoding twice).
+      PORT: ${PORT:-3001}
+    ports:
+      - '${PORT:-3001}:${PORT:-3001}'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # No curl/wget in node:20-alpine by default; Node 20 ships a global
+      # fetch, so this avoids adding a package just for the healthcheck.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:' + (process.env.PORT || 3001) + '/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
