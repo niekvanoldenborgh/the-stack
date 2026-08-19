@@ -10,12 +10,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install from the lockfile in its own layer so `npm ci` is only re-run when
-# dependencies actually change, not on every source edit. server/package.json
-# has no devDependencies (see server/README.md) so there is nothing to
-# --omit=dev here, but the flag documents the intent if that ever changes.
+# Deps are vendored, not installed: node_modules is git-tracked and complete
+# (THEA-112), so the build needs no npm-registry egress. argon2 — the only
+# native dep — ships an N-API prebuild covering linux-x64/arm64 musl
+# (node_modules/argon2/prebuilds), which is what alpine needs, so there's no
+# install/compile step. package.json is still copied for metadata/resolution.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY node_modules ./node_modules
 
 COPY db ./db
 COPY scripts ./scripts

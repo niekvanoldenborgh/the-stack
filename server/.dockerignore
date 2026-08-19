@@ -1,7 +1,7 @@
-# Keep the build context small and force a clean `npm ci` inside the image
-# instead of shipping this host's committed (possibly other-platform)
-# node_modules — see Dockerfile.
-node_modules
+# node_modules is intentionally NOT excluded: it's git-tracked and vendored
+# into the image so the build needs no npm-registry egress (THEA-112). The
+# only native dep, argon2, ships N-API prebuilds for linux-x64/arm64 musl,
+# so the committed tree runs on node:20-alpine as-is — see Dockerfile.
 test
 .env
 .env.*
