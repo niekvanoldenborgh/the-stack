@@ -98,55 +98,56 @@ export function CountdownRing({ pct, timeLabel, caption, subtitle, children, siz
       <View accessible accessibilityLabel={`${caption}: ${timeLabel}, ${subtitle}`} style={{ alignItems: 'center' }}>
         <Caption style={{ marginBottom: spacing.sm }}>{caption}</Caption>
         <View style={{ width: size, height: size }}>
-        <Svg width={size} height={size}>
-          <Circle cx={center} cy={center} r={r} stroke={color.border} strokeWidth={strokeWidth} fill="none" />
-          {mode === 'dark' ? (
+          <Svg width={size} height={size}>
+            <Circle cx={center} cy={center} r={r} stroke={color.border} strokeWidth={strokeWidth} fill="none" />
+            {mode === 'dark' ? (
+              <Circle
+                cx={center}
+                cy={center}
+                r={r}
+                stroke={emphasis}
+                strokeWidth={strokeWidth * 2}
+                strokeLinecap="round"
+                strokeDasharray={`${circumference} ${circumference}`}
+                strokeDashoffset={dashOffset}
+                fill="none"
+                opacity={0.18}
+                transform={`rotate(-90 ${center} ${center})`}
+              />
+            ) : null}
             <Circle
               cx={center}
               cy={center}
               r={r}
               stroke={emphasis}
-              strokeWidth={strokeWidth * 2}
+              strokeWidth={strokeWidth}
               strokeLinecap="round"
               strokeDasharray={`${circumference} ${circumference}`}
               strokeDashoffset={dashOffset}
               fill="none"
-              opacity={0.18}
               transform={`rotate(-90 ${center} ${center})`}
             />
-          ) : null}
-          <Circle
-            cx={center}
-            cy={center}
-            r={r}
-            stroke={emphasis}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeDasharray={`${circumference} ${circumference}`}
-            strokeDashoffset={dashOffset}
-            fill="none"
-            transform={`rotate(-90 ${center} ${center})`}
-          />
-        </Svg>
-        <View style={styles.ringCenter}>
-          <Text
-            style={[
-              typography.metric,
-              { color: emphasis },
-              mode === 'dark'
-                ? { textShadowColor: emphasis, textShadowRadius: 18, textShadowOffset: { width: 0, height: 0 } }
-                : null,
-            ]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {timeLabel}
-          </Text>
+          </Svg>
+          <View style={styles.ringCenter}>
+            <Text
+              style={[
+                typography.metric,
+                { color: emphasis },
+                mode === 'dark'
+                  ? { textShadowColor: emphasis, textShadowRadius: 18, textShadowOffset: { width: 0, height: 0 } }
+                  : null,
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {timeLabel}
+            </Text>
+          </View>
         </View>
+        <Text style={[typography.title, { color: color.textPrimary, marginTop: spacing.md, textAlign: 'center' }]}>
+          {subtitle}
+        </Text>
       </View>
-      <Text style={[typography.title, { color: color.textPrimary, marginTop: spacing.md, textAlign: 'center' }]}>
-        {subtitle}
-      </Text>
       {children}
     </View>
   );
