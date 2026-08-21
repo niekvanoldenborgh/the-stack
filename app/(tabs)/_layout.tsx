@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Calendar, House, SquarePlus, Settings, TrendingUp } from 'lucide-react-native';
+import { Activity, BarChart3, CalendarDays, Syringe, User } from 'lucide-react-native';
 
 import { fonts, radius, typography, useTheme, withOpacity } from '../../src/ui/theme';
 
@@ -44,25 +44,25 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Summary',
+          title: 'Today',
           headerShown: false,
-          tabBarIcon: ({ color: c, size }) => <House color={c} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <Activity color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
         name="logger"
         options={{
-          title: 'Logger',
+          title: 'Log',
           headerShown: false,
-          tabBarIcon: ({ color: c, size }) => <SquarePlus color={c} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <Syringe color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
         name="results"
         options={{
-          title: 'Results',
+          title: 'Progress',
           headerShown: false,
-          tabBarIcon: ({ color: c, size }) => <TrendingUp color={c} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <BarChart3 color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
@@ -70,15 +70,15 @@ export default function TabsLayout() {
         options={{
           title: 'Calendar',
           headerShown: false,
-          tabBarIcon: ({ color: c, size }) => <Calendar color={c} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <CalendarDays color={c} size={size} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: 'Me',
           headerShown: false,
-          tabBarIcon: ({ color: c, size }) => <Settings color={c} size={size} strokeWidth={1.75} />,
+          tabBarIcon: ({ color: c, size }) => <User color={c} size={size} strokeWidth={1.75} />,
         }}
       />
     </Tabs>
