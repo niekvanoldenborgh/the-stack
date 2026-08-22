@@ -1,0 +1,44 @@
+# What NOT to upload to EAS Build.
+#
+# IMPORTANT: when this file exists, EAS uses it INSTEAD of .gitignore to decide
+# what goes into the build archive. So everything secret or unnecessary has to
+# be listed here explicitly — .gitignore is no longer consulted.
+#
+# Why this file exists: node_modules is committed to this repo (46k files,
+# including 24 macOS/arm64 native binaries). Uploading a mac-built dependency
+# tree to a Linux builder made the "Install dependencies" phase fail, and blew
+# the archive up to 269 MB. EAS installs dependencies itself from
+# package.json + package-lock.json, so the tree must not be shipped.
+
+# Dependencies — EAS installs these on the builder, for the right platform
+node_modules/
+
+# Backend. Not part of the Expo app: nothing in server/ is imported by app/ or
+# src/ (see server/README.md), and it vendors its own node_modules for Docker.
+server/
+
+# Design exploration + prototypes — HTML mockups, not app code
+design-lab/
+design-imports/
+docs/
+
+# Build output and local caches
+dist/
+.expo/
+.test-build/
+web-build/
+
+# Secrets — never upload. EXPO_PUBLIC_* values come from eas.json `env` or
+# EAS secrets, not from a local .env file.
+.env
+.env.*
+!.env.example
+server/.env
+
+# Local noise
+.DS_Store
+*.log
+*.zip
+ops/
+paperclip_agents/
+tests/
