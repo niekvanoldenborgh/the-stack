@@ -54,14 +54,17 @@ function CompoundRow({ peptide, inStack, onPress }: { peptide: Peptide; inStack:
   const theme = useTheme();
   const { color } = theme;
   const withheld = Boolean(peptide.doseGuidanceWithheld);
+  // Names everything the row visually shows — evidence tier, the one-line
+  // summary, and stack/withheld status — rather than just the compound name,
+  // since `Tile`'s own accessibilityRole="button" only tells a screen reader
+  // this is tappable, not what's on it. Evidence tier is only announced when
+  // it's actually shown: withheld rows swap that slot for the lock marker.
+  const a11yLabel = withheld
+    ? `${peptide.name}. Dose guidance withheld. ${peptide.summary}`
+    : `${peptide.name}, evidence tier ${peptide.evidence}. ${peptide.summary}. ${inStack ? 'Already in your stack' : 'Not in your stack'}`;
 
   return (
-    <Tile
-      elevation="low"
-      onPress={onPress}
-      accessibilityLabel={`${peptide.name}${withheld ? ', dose guidance withheld' : inStack ? ', already in your stack' : ', not in your stack'}`}
-      style={{ marginBottom: spacing.md }}
-    >
+    <Tile elevation="low" onPress={onPress} accessibilityLabel={a11yLabel} style={{ marginBottom: spacing.md }}>
       <Row gap={spacing.md} align="flex-start">
         {withheld ? (
           <View

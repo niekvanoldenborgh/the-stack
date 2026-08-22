@@ -98,7 +98,12 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 }
 
 /** Five discrete positions, coloured up to the current level — status is
- *  never colour alone, so the numeral label always sits beside these. */
+ *  never colour alone, so the numeral label always sits beside these. Purely
+ *  decorative for accessibility purposes: the call site wraps this together
+ *  with the text readout in one `accessible` node (see the risk-dial face,
+ *  same pattern as `CountdownRing` in src/ui/nocturne.tsx), which already
+ *  collapses this whole subtree into that single announcement — these dots
+ *  carry no accessibility props of their own on purpose. */
 function RiskDots({ value }: { value: 1 | 2 | 3 | 4 | 5 }) {
   const theme = useTheme();
   const { color } = theme;
@@ -286,11 +291,21 @@ export default function SettingsScreen() {
         caption="Risk dial"
         style={{ marginBottom: spacing.lg }}
       >
-        <RiskDots value={riskLevel} />
-        <Row align="baseline" gap={spacing.xs} style={{ marginTop: spacing.sm }}>
-          <Text style={[typography.heading, { color: color.textPrimary }]}>{activeRisk.label}</Text>
-          <Small>· {riskLevel} of 5</Small>
-        </Row>
+        {/* Grouped as one accessibility node (same pattern as CountdownRing
+         *  in src/ui/nocturne.tsx) — the dots are decorative, so without this
+         *  a screen reader would either skip the value entirely or read the
+         *  dots and the label as two disconnected things. */}
+        <View
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={`Risk level ${riskLevel} of 5 — ${activeRisk.label}`}
+        >
+          <RiskDots value={riskLevel} />
+          <Row align="baseline" gap={spacing.xs} style={{ marginTop: spacing.sm }}>
+            <Text style={[typography.heading, { color: color.textPrimary }]}>{activeRisk.label}</Text>
+            <Small>· {riskLevel} of 5</Small>
+          </Row>
+        </View>
         <Small style={{ marginTop: 2 }}>Changes dose only — never which compounds are selected</Small>
 
         {profile ? (
@@ -310,7 +325,7 @@ export default function SettingsScreen() {
                      *  with a "current" marker — nothing rendered exists
                      *  past the fifth segment, which is the visual for
                      *  "never past the published maximum". */}
-                    <RiskPhaseGauge value={riskLevel} />
+                    <RiskPhaseGauge value={riskLevel} levelLabel={activeRisk.label} />
                   </View>
                   <Small style={{ marginTop: spacing.sm }}>
                     Interpolates between the published low, typical and high doses — never past the published
@@ -512,8 +527,15 @@ export default function SettingsScreen() {
  *  the dial's position — reuses `PhaseBar` from src/ui/nocturne.tsx rather
  *  than a bespoke gauge. Position is centred inside its own segment (never
  *  exactly on a boundary) so every level, including 5, gets the "current"
- *  highlight rather than reading as "done". */
-function RiskPhaseGauge({ value }: { value: 1 | 2 | 3 | 4 | 5 }) {
+ *  highlight rather than reading as "done".
+ *
+ *  `PhaseBar` itself only renders each segment's label as plain text (Low /
+ *  blank / Typical / blank / Max) with no indication of which one is
+ *  current — swiping through it would read as a bare, disconnected word
+ *  list. Wrapped here in one `accessible` node with an explicit position +
+ *  invariant readout, so the graphic states its value instead of just being
+ *  drawn. */
+function RiskPhaseGauge({ value, levelLabel }: { value: 1 | 2 | 3 | 4 | 5; levelLabel: string }) {
   const segments = [
     { key: '1', label: 'Low', length: 1 },
     { key: '2', label: '', length: 1 },
@@ -521,7 +543,15 @@ function RiskPhaseGauge({ value }: { value: 1 | 2 | 3 | 4 | 5 }) {
     { key: '4', label: '', length: 1 },
     { key: '5', label: 'Max', length: 1 },
   ];
-  return <PhaseBar segments={segments} position={(value - 0.5) / 5} />;
+  return (
+    <View
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`Dial position: ${levelLabel}, level ${value} of 5. Interpolates between the published low and maximum — it cannot go past the maximum.`}
+    >
+      <PhaseBar segments={segments} position={(value - 0.5) / 5} />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -546,7 +576,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
-    minHeight: 32,
+    minHeight: 44,
   },
   destructiveRow: {
     flexDirection: 'row',
