@@ -61,6 +61,13 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "owner": "nfpassistance-viniek",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "211e88b1-e825-4894-b64a-1114710681f2"
+      }
     }
   }
 }

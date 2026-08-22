@@ -1,8 +1,9 @@
+import { ChevronLeft, Gauge, Lock, Minus, Plus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Pressable, Text, View } from 'react-native';
 
-import { GOALS, HEALTH_FLAGS } from '../../src/domain/goals';
+import { GOALS, GOALS_BY_ID, HEALTH_FLAGS } from '../../src/domain/goals';
 import { PEPTIDES, searchPeptides } from '../../src/domain/peptides';
 import type {
   ActivityLevel,
@@ -32,25 +33,38 @@ import {
   Chip,
   Display,
   Divider,
-  Heading,
   Logo,
-  ProgressBar,
   Row,
   Screen,
   Small,
   Spacer,
+  Stepper,
   TextField,
   Title,
   Toggle,
 } from '../../src/ui/components';
+import { PhaseBar, Tile } from '../../src/ui/nocturne';
 import { RiskPicker } from '../../src/ui/RiskPicker';
-import { RulerPicker } from '../../src/ui/RulerPicker';
 import { List, ListItem, Section } from '../../src/ui/primitives';
 import { LEGAL_LABELS, radius, spacing, typography, useTheme } from '../../src/ui/theme';
 
 type Step = 'disclaimer' | 'basics' | 'lifestyle' | 'goals' | 'current' | 'health' | 'review';
 
 const STEPS: Step[] = ['disclaimer', 'basics', 'lifestyle', 'goals', 'current', 'health', 'review'];
+
+/** Short nav-chrome label per step — the phase bar's segment label and the
+ *  back-nav row's title. The full-sentence heading each step already had
+ *  (e.g. "What are you after?") stays as the `Body muted` copy underneath;
+ *  this is just wayfinding, not a content change. */
+const NAV_TITLES: Record<Step, string> = {
+  disclaimer: 'Read this first',
+  basics: 'About you',
+  lifestyle: 'Training & sleep',
+  goals: 'Goals',
+  current: 'Current use',
+  health: 'Health history',
+  review: 'Risk & review',
+};
 
 const ACTIVITY_OPTIONS: Array<{ id: ActivityLevel; label: string; hint: string }> = [
   { id: 'sedentary', label: 'Sedentary', hint: 'Desk job, little movement' },
@@ -67,17 +81,17 @@ const EXPERIENCE_OPTIONS: Array<{ id: Experience; label: string; hint: string }>
 ];
 
 /**
- * Onboarding, redesigned THEA-40.
+ * Onboarding, reskinned into Nocturne (THEA rebrand design-lab pass).
  *
- * Each step already had exactly one primary action (the bottom "Continue" /
- * "Build my stack" button) and a `Display` + `Body` heading, so the
- * hierarchy and single-action shape here didn't need inventing — what
- * changed is the field grouping underneath: related fields (age/weight/
- * height, activity/training days/experience, sleep hours/quality) now share
- * one `Section` instead of one bordered `Card` each, and the compound
- * search under "Are you running anything now?" uses `List`/`ListItem`
- * instead of a hand-styled selectable row. The under-18/21 growth-plate
- * copy is carried over byte-for-byte (AGENTS.md invariant 7).
+ * Same seven steps, same state, same `finish()` merge/save logic as before —
+ * see the module doc this replaced for the THEA-40 rationale on step
+ * grouping. What changed here is presentation only: a `PhaseBar` (shared,
+ * from `src/ui/nocturne`) replaces the old `ProgressBar` + "Step X of Y"
+ * text so the flow reads as a sequence; body-metric fields (age/weight/
+ * height/sleep hours) use the chunky `Stepper` control instead of
+ * `RulerPicker`; and goals render as a tappable icon-tile grid instead of
+ * full-width rows. The under-18/21 growth-plate copy is carried over
+ * byte-for-byte (AGENTS.md invariant 7) — only its container changed.
  */
 export default function Onboarding() {
   const router = useRouter();
@@ -208,22 +222,36 @@ export default function Onboarding() {
     router.replace('/recommendation');
   };
 
+  const phaseSegments = STEPS.map((s) => ({ key: s, label: NAV_TITLES[s], length: 1 }));
+  const phasePosition = (stepIndex + 0.5) / STEPS.length;
+
   return (
     <Screen>
       <Spacer size={spacing.lg} />
-      <Row justify="space-between" style={{ marginBottom: spacing.sm }}>
-        <Caption color={color.textSecondary}>
-          Step {stepIndex + 1} of {STEPS.length}
-        </Caption>
-        {stepIndex > 0 ? (
-          <Pressable onPress={() => setStepIndex((i) => Math.max(0, i - 1))} accessibilityRole="button">
-            <Small muted={false} style={{ color: color.primary }}>
-              Back
-            </Small>
-          </Pressable>
-        ) : null}
-      </Row>
-      <ProgressBar value={((stepIndex + 1) / STEPS.length) * 100} />
+
+      {stepIndex > 0 ? (
+        <Row gap={spacing.md} style={{ marginBottom: spacing.lg }}>
+          <BackButton onPress={() => setStepIndex((i) => Math.max(0, i - 1))} />
+          <Title style={{ flex: 1 }}>{NAV_TITLES[step]}</Title>
+          <Caption color={color.textSecondary}>
+            {stepIndex + 1} / {STEPS.length}
+          </Caption>
+        </Row>
+      ) : (
+        <Row justify="flex-end" style={{ marginBottom: spacing.lg }}>
+          <Caption color={color.textSecondary}>
+            {stepIndex + 1} / {STEPS.length}
+          </Caption>
+        </Row>
+      )}
+
+      <View
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel={`Step ${stepIndex + 1} of ${STEPS.length}: ${NAV_TITLES[step]}`}
+      >
+        <PhaseBar segments={phaseSegments} position={phasePosition} />
+      </View>
       <Spacer size={spacing.xl} />
 
       {step === 'disclaimer' ? (
@@ -241,209 +269,258 @@ export default function Onboarding() {
 
       {step === 'basics' ? (
         <View>
-          <Display>About you</Display>
-          <Body muted style={{ marginTop: spacing.sm }}>
+          <Body muted>
             Bodyweight scales the dose for several compounds. Age changes which warnings apply and how the engine
             ranks the growth-hormone compounds.
           </Body>
           <Spacer />
 
-          <Section title="Body measurements" gap={spacing.xl}>
-            <View>
-              <Caption color={color.textSecondary}>Age</Caption>
-              <Spacer size={spacing.md} />
-              <RulerPicker value={age} onChange={setAge} min={13} max={90} unit="years" />
-              {age < 21 ? (
-                <View style={{ marginTop: spacing.lg }}>
-                  <Callout
-                    tone={age < 18 ? 'critical' : 'high'}
-                    title={age < 18 ? 'Your growth plates are still open' : 'Your growth plates may not be closed yet'}
-                  >
-                    {age < 18
-                      ? 'Growth-hormone and IGF-1 compounds act directly on open growth plates. Getting this wrong can permanently change your adult height and bone proportions, and it cannot be reversed. There is also no safety data for any of these compounds in under-18s — every dose figure in this app is extrapolated from adults.\n\nYou can continue, and every affected compound will be flagged. Please talk to a doctor first.'
-                      : 'Growth plates typically finish closing between about 18 and 21, later in males. Growth-hormone compounds are ranked lower for you and will carry a warning, because skeletal changes are still possible at your age.'}
-                  </Callout>
-                </View>
-              ) : null}
-            </View>
-
-            <Divider />
-
-            <View>
-              <Caption color={color.textSecondary}>Bodyweight</Caption>
-              <Spacer size={spacing.md} />
-              <RulerPicker value={weightKg} onChange={setWeightKg} min={35} max={200} unit="kg" />
-            </View>
-
-            <Divider />
-
-            <View>
-              <Caption color={color.textSecondary}>Height</Caption>
-              <Spacer size={spacing.md} />
-              <RulerPicker value={heightCm} onChange={setHeightCm} min={130} max={220} unit="cm" />
-            </View>
-          </Section>
-
-          <Section title="Sex" last>
-            <Row wrap>
-              {(['male', 'female', 'other'] as Sex[]).map((option) => (
-                <Chip
-                  key={option}
-                  label={option === 'male' ? 'Male' : option === 'female' ? 'Female' : 'Other'}
-                  selected={sex === option}
-                  onPress={() => setSex(option)}
-                />
-              ))}
+          <Tile elevation="hero" caption="Weight">
+            <Row justify="center" align="center" gap={spacing.xl} style={{ marginTop: spacing.md }}>
+              <StepButton
+                accessibilityLabel="Decrease weight"
+                onPress={() => setWeightKg((v) => Math.max(35, v - 1))}
+              >
+                <Minus size={18} color={color.textPrimary} />
+              </StepButton>
+              <HeroNumber value={`${weightKg}`} unit="kg" />
+              <StepButton
+                accessibilityLabel="Increase weight"
+                onPress={() => setWeightKg((v) => Math.min(200, v + 1))}
+              >
+                <Plus size={18} color={color.textPrimary} />
+              </StepButton>
             </Row>
-            <Small style={{ marginTop: spacing.sm }}>
-              Used for warnings that differ by sex — for example, that tirzepatide reduces oral contraceptive
-              absorption. It does not change the dose maths.
-            </Small>
-          </Section>
+          </Tile>
+          <Spacer size={spacing.md} />
+
+          <Tile elevation="mid">
+            <Caption>Height</Caption>
+            <Spacer size={spacing.sm} />
+            <Stepper value={heightCm} onChange={setHeightCm} min={130} max={220} suffix="cm" />
+            <Divider />
+            <Caption>Age</Caption>
+            <Spacer size={spacing.sm} />
+            <Stepper value={age} onChange={setAge} min={13} max={90} suffix="yrs" />
+            {/* Warns, never blocks — AGENTS.md invariant 7. This is a
+             *  separate, earlier gate than the hard 18+ check at account
+             *  signup (`app/settings/account.tsx`); nothing here should read
+             *  as though that gate doesn't exist, and nothing here should
+             *  add a new one. */}
+            {age < 21 ? (
+              <View style={{ marginTop: spacing.lg }}>
+                <Callout
+                  tone={age < 18 ? 'critical' : 'high'}
+                  title={age < 18 ? 'Your growth plates are still open' : 'Your growth plates may not be closed yet'}
+                >
+                  {age < 18
+                    ? 'Growth-hormone and IGF-1 compounds act directly on open growth plates. Getting this wrong can permanently change your adult height and bone proportions, and it cannot be reversed. There is also no safety data for any of these compounds in under-18s — every dose figure in this app is extrapolated from adults.\n\nYou can continue, and every affected compound will be flagged. Please talk to a doctor first.'
+                    : 'Growth plates typically finish closing between about 18 and 21, later in males. Growth-hormone compounds are ranked lower for you and will carry a warning, because skeletal changes are still possible at your age.'}
+                </Callout>
+              </View>
+            ) : null}
+          </Tile>
+
+          <Spacer size={spacing.xl} />
+          <Caption>Sex</Caption>
+          <Spacer size={spacing.sm} />
+          <Row wrap>
+            {(['male', 'female', 'other'] as Sex[]).map((option) => (
+              <Chip
+                key={option}
+                label={option === 'male' ? 'Male' : option === 'female' ? 'Female' : 'Other'}
+                selected={sex === option}
+                onPress={() => setSex(option)}
+              />
+            ))}
+          </Row>
+          <Small style={{ marginTop: spacing.sm }}>
+            Used for warnings that differ by sex — for example, that tirzepatide reduces oral contraceptive
+            absorption. It does not change the dose maths.
+          </Small>
         </View>
       ) : null}
 
       {step === 'lifestyle' ? (
         <View>
-          <Display>Training and sleep</Display>
-          <Body muted style={{ marginTop: spacing.sm }}>
+          <Body muted>
             Sleep is not a soft input here. Most growth hormone is released during deep sleep, so it directly
             changes what the GH-axis compounds can do — and the doses this app suggests.
           </Body>
           <Spacer />
 
-          <Section title="Training" gap={spacing.xl}>
-            <View>
-              <Caption color={color.textSecondary}>Activity level</Caption>
-              <Spacer size={spacing.md} />
-              {ACTIVITY_OPTIONS.map((option) => (
+          <Caption>Training</Caption>
+          <Spacer size={spacing.sm} />
+          <Tile elevation="mid">
+            <Caption>Activity level</Caption>
+            <Spacer size={spacing.md} />
+            {ACTIVITY_OPTIONS.map((option) => (
+              <Chip
+                key={option.id}
+                label={option.label}
+                sublabel={option.hint}
+                selected={activity === option.id}
+                onPress={() => setActivity(option.id)}
+              />
+            ))}
+
+            <Divider />
+
+            <Caption>Training days per week</Caption>
+            <Spacer size={spacing.md} />
+            <Row wrap>
+              {([2, 3, 4, 5, 6] as TrainingDaysPerWeek[]).map((days) => (
                 <Chip
-                  key={option.id}
-                  label={option.label}
-                  sublabel={option.hint}
-                  selected={activity === option.id}
-                  onPress={() => setActivity(option.id)}
+                  key={days}
+                  label={`${days}`}
+                  selected={trainingDays === days}
+                  onPress={() => setTrainingDays(days)}
                 />
               ))}
-            </View>
+            </Row>
 
             <Divider />
 
-            <View>
-              <Caption color={color.textSecondary}>Training days per week</Caption>
-              <Spacer size={spacing.md} />
-              <Row wrap>
-                {([2, 3, 4, 5, 6] as TrainingDaysPerWeek[]).map((days) => (
-                  <Chip
-                    key={days}
-                    label={`${days}`}
-                    selected={trainingDays === days}
-                    onPress={() => setTrainingDays(days)}
-                  />
-                ))}
-              </Row>
-            </View>
+            <Caption>Peptide experience</Caption>
+            <Spacer size={spacing.md} />
+            {EXPERIENCE_OPTIONS.map((option) => (
+              <Chip
+                key={option.id}
+                label={option.label}
+                sublabel={option.hint}
+                selected={experience === option.id}
+                onPress={() => setExperience(option.id)}
+              />
+            ))}
+          </Tile>
+
+          <Spacer size={spacing.xl} />
+          <Caption>Sleep</Caption>
+          <Spacer size={spacing.sm} />
+          <Tile elevation="mid">
+            <Caption>Average sleep per night</Caption>
+            <Spacer size={spacing.sm} />
+            <Stepper value={sleepHours} onChange={setSleepHours} min={3} max={11} step={0.5} suffix="h" />
+            {sleepHours < 6.5 ? (
+              <View style={{ marginTop: spacing.lg }}>
+                <Callout tone="moderate" title="This will limit what any stack can do">
+                  Under about 6.5 hours, GH-axis compounds have much less to amplify. The engine will hold those
+                  doses down rather than pretending a bigger dose compensates.
+                </Callout>
+              </View>
+            ) : null}
 
             <Divider />
 
-            <View>
-              <Caption color={color.textSecondary}>Peptide experience</Caption>
-              <Spacer size={spacing.md} />
-              {EXPERIENCE_OPTIONS.map((option) => (
+            <Caption>Sleep quality</Caption>
+            <Spacer size={spacing.md} />
+            <Row wrap>
+              {[1, 2, 3, 4, 5].map((score) => (
                 <Chip
-                  key={option.id}
-                  label={option.label}
-                  sublabel={option.hint}
-                  selected={experience === option.id}
-                  onPress={() => setExperience(option.id)}
+                  key={score}
+                  label={`${score}`}
+                  selected={sleepQuality === score}
+                  onPress={() => setSleepQuality(score)}
                 />
               ))}
-            </View>
-          </Section>
-
-          <Section title="Sleep" gap={spacing.xl} last>
-            <View>
-              <Caption color={color.textSecondary}>Average sleep per night</Caption>
-              <Spacer size={spacing.md} />
-              <RulerPicker value={sleepHours} onChange={setSleepHours} min={3} max={11} step={0.5} unit="hours" />
-              {sleepHours < 6.5 ? (
-                <View style={{ marginTop: spacing.lg }}>
-                  <Callout tone="moderate" title="This will limit what any stack can do">
-                    Under about 6.5 hours, GH-axis compounds have much less to amplify. The engine will hold those
-                    doses down rather than pretending a bigger dose compensates.
-                  </Callout>
-                </View>
-              ) : null}
-            </View>
-
-            <Divider />
-
-            <View>
-              <Caption color={color.textSecondary}>Sleep quality</Caption>
-              <Spacer size={spacing.md} />
-              <Row wrap>
-                {[1, 2, 3, 4, 5].map((score) => (
-                  <Chip
-                    key={score}
-                    label={`${score}`}
-                    selected={sleepQuality === score}
-                    onPress={() => setSleepQuality(score)}
-                  />
-                ))}
-              </Row>
-              <Small style={{ marginTop: spacing.sm }}>1 = broken and unrefreshing, 5 = deep and consistent.</Small>
-            </View>
-          </Section>
+            </Row>
+            <Small style={{ marginTop: spacing.sm }}>1 = broken and unrefreshing, 5 = deep and consistent.</Small>
+          </Tile>
         </View>
       ) : null}
 
       {step === 'goals' ? (
         <View>
-          <Display>What are you after?</Display>
-          <Body muted style={{ marginTop: spacing.sm }}>
+          <Body muted>
             Pick up to three, in order of importance. The order matters — your first choice gets the most weight
             when the engine builds your stack.
           </Body>
           <Spacer />
 
-          {GOALS.map((goal) => {
-            const index = goals.indexOf(goal.id);
-            const selected = index >= 0;
-            return (
-              <Pressable
-                key={goal.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => toggleGoal(goal.id)}
-                style={({ pressed }) => ({
-                  backgroundColor: selected ? `${color.primary}14` : color.surface,
-                  borderColor: selected ? color.primary : color.border,
-                  borderWidth: 1,
-                  borderRadius: radius.md,
-                  padding: spacing.lg,
-                  marginBottom: spacing.sm,
-                  opacity: pressed ? 0.8 : 1,
-                })}
-              >
-                <Row justify="space-between">
-                  <Row gap={spacing.md} style={{ flex: 1 }}>
-                    <Body>{goal.icon}</Body>
-                    <View style={{ flex: 1 }}>
-                      <Heading>{goal.label}</Heading>
-                      <Small style={{ marginTop: 2 }}>{goal.blurb}</Small>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+            {GOALS.map((goal) => {
+              const index = goals.indexOf(goal.id);
+              const selected = index >= 0;
+              const accent = theme.tone('accent');
+              return (
+                <Pressable
+                  key={goal.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${goal.label}${selected ? `, selected, priority ${index + 1}` : ''}`}
+                  onPress={() => toggleGoal(goal.id)}
+                  style={({ pressed }) => [
+                    {
+                      width: '47%',
+                      minHeight: 132,
+                      borderRadius: radius.lg,
+                      borderWidth: 1,
+                      borderColor: selected ? accent.fg : color.border,
+                      backgroundColor: selected ? color.surfaceMuted : color.surface,
+                      padding: spacing.lg,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: spacing.sm,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                    theme.shadow(selected ? 2 : 1),
+                  ]}
+                >
+                  {selected ? (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 10,
+                        right: 10,
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        backgroundColor: accent.fg,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={[typography.caption, { color: color.onPrimary, fontSize: 11, letterSpacing: 0 }]}>
+                        {index + 1}
+                      </Text>
                     </View>
-                  </Row>
-                  {selected ? <Badge label={`${index + 1}`} tone="accent" solid /> : null}
-                </Row>
-                {selected ? (
-                  <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: color.border }}>
-                    <Caption color={theme.tone('moderate').fg}>Reality check</Caption>
+                  ) : null}
+                  <View
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: 26,
+                      backgroundColor: selected ? accent.bg : color.surfaceMuted,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 24 }}>{goal.icon}</Text>
+                  </View>
+                  <Text style={[typography.bodyStrong, { color: color.textPrimary, textAlign: 'center' }]}>
+                    {goal.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {goals.length > 0 ? (
+            <View style={{ marginTop: spacing.xl, gap: spacing.lg }}>
+              {goals.map((id) => {
+                const goal = GOALS_BY_ID[id];
+                return (
+                  <View
+                    key={id}
+                    style={{ paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: color.border }}
+                  >
+                    <Caption color={theme.tone('moderate').fg}>Reality check — {goal.label}</Caption>
                     <Small style={{ marginTop: spacing.xs }}>{goal.reality}</Small>
                   </View>
-                ) : null}
-              </Pressable>
-            );
-          })}
+                );
+              })}
+            </View>
+          ) : null}
 
           {conflicts.length > 0 ? (
             <View style={{ marginTop: spacing.lg }}>
@@ -459,8 +536,7 @@ export default function Onboarding() {
 
       {step === 'current' ? (
         <View>
-          <Display>Are you running anything now?</Display>
-          <Body muted style={{ marginTop: spacing.sm }}>
+          <Body muted>
             Anything you are already taking gets checked against everything we recommend — for interactions,
             and for compounds that would just duplicate what you have.
           </Body>
@@ -526,8 +602,7 @@ export default function Onboarding() {
 
       {step === 'health' ? (
         <View>
-          <Display>Health history</Display>
-          <Body muted style={{ marginTop: spacing.sm }}>
+          <Body muted>
             This is the most important screen in the app. Anything you tick here removes compounds from your
             results — permanently, not as a warning you can dismiss.
           </Body>
@@ -565,8 +640,7 @@ export default function Onboarding() {
 
       {step === 'review' ? (
         <View>
-          <Display>How much risk?</Display>
-          <Body muted style={{ marginTop: spacing.sm }}>
+          <Body muted>
             This sets where in each compound&apos;s published range your dose lands, and how much of the catalogue
             the engine will draw from. You can change it any time — including on the next screen, with the doses
             updating live.
@@ -574,6 +648,46 @@ export default function Onboarding() {
           <Spacer />
 
           <RiskPicker value={riskTolerance} onChange={setRiskTolerance} />
+          <Spacer size={spacing.md} />
+
+          <Tile elevation="mid">
+            <Caption>What moving it changes</Caption>
+            <Row justify="space-between" align="center" style={{ marginTop: spacing.md }}>
+              <Row gap={spacing.sm} align="center" style={{ flex: 1 }}>
+                <RowIcon accent>
+                  <Gauge size={17} color={theme.tone('accent').fg} />
+                </RowIcon>
+                <Body style={{ ...typography.bodyStrong }}>Dose amount</Body>
+              </Row>
+              <Badge label="Adjusts" tone="success" />
+            </Row>
+            <Divider />
+            <Row justify="space-between" align="center">
+              <Row gap={spacing.sm} align="center" style={{ flex: 1 }}>
+                <RowIcon>
+                  <Lock size={15} color={color.textSecondary} />
+                </RowIcon>
+                <Body style={{ ...typography.bodyStrong }}>Compounds &amp; stack size</Body>
+              </Row>
+              <Row gap={spacing.xs} align="center">
+                <Lock size={13} color={color.textSecondary} />
+                <Small>Fixed</Small>
+              </Row>
+            </Row>
+          </Tile>
+
+          {/* TODO(nocturne): the mockup's fourth frame ("Your first stack")
+           *  previews the generated stack itself — compound cards with an
+           *  evidence letter + dose·time, plus a SafetyTile summary. That
+           *  data doesn't exist yet at this point in the flow: the stack is
+           *  generated on `/recommendation`, after `finish()`, specifically
+           *  so its risk dial can re-derive doses live before anything is
+           *  committed (see the comment above `finish`). Rendering that
+           *  preview here would mean invoking the recommendation engine
+           *  mid-onboarding and inventing numbers this screen has no real
+           *  source for — against the "no invented numbers" rule. Leaving
+           *  this as the profile summary below until stack generation is
+           *  either moved earlier or duplicated here on purpose. */}
 
           <Section title="Your profile" last>
             <SummaryRow label="Age" value={`${age}`} tone={age < 21 ? 'moderate' : undefined} />
@@ -636,6 +750,112 @@ export default function Onboarding() {
       ) : null}
       <Spacer size={spacing.xxl} />
     </Screen>
+  );
+}
+
+/** Round 44×44 back-nav button — the mockup's `.back-btn`, translated to a
+ *  real `ChevronLeft` instead of a rotated arrow glyph. */
+function BackButton({ onPress, accessibilityLabel = 'Back' }: { onPress: () => void; accessibilityLabel?: string }) {
+  const { color } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 44,
+        height: 44,
+        borderRadius: radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: color.surfaceMuted,
+        borderWidth: 1,
+        borderColor: color.border,
+        opacity: pressed ? 0.75 : 1,
+      })}
+    >
+      <ChevronLeft size={18} color={color.textPrimary} />
+    </Pressable>
+  );
+}
+
+/** One half of the weight hero stepper — same 46×46 circular chrome as the
+ *  shared `Stepper` control's own buttons (`src/ui/components.tsx`), sized
+ *  up slightly to sit next to the hero numeral. */
+function StepButton({
+  onPress,
+  accessibilityLabel,
+  children,
+}: {
+  onPress: () => void;
+  accessibilityLabel: string;
+  children: ReactNode;
+}) {
+  const { color } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 46,
+        height: 46,
+        borderRadius: radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: color.surfaceMuted,
+        borderWidth: 1,
+        borderColor: color.borderStrong,
+        opacity: pressed ? 0.75 : 1,
+      })}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+/** The one glowing figure on the "About you" step — same dark-glow /
+ *  light-deepened-stroke split as `CountdownRing` in `src/ui/nocturne.tsx`,
+ *  reproduced locally since that emphasis helper isn't exported. */
+function HeroNumber({ value, unit }: { value: string; unit?: string }) {
+  const theme = useTheme();
+  const { color, mode } = theme;
+  const emphasis = mode === 'dark' ? color.primary : color.primaryPressed;
+  return (
+    <Row align="flex-end" gap={spacing.xs}>
+      <Text
+        style={[
+          typography.metric,
+          { color: emphasis },
+          mode === 'dark'
+            ? { textShadowColor: emphasis, textShadowRadius: 18, textShadowOffset: { width: 0, height: 0 } }
+            : null,
+        ]}
+      >
+        {value}
+      </Text>
+      {unit ? <Text style={[typography.data, { color: color.textSecondary, marginBottom: 10 }]}>{unit}</Text> : null}
+    </Row>
+  );
+}
+
+/** Small icon chip used in the risk-dial "what moving it changes" rows —
+ *  same shape as the mockup's `.row-icon`. */
+function RowIcon({ accent = false, children }: { accent?: boolean; children: ReactNode }) {
+  const { color } = useTheme();
+  return (
+    <View
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: radius.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: accent ? color.primarySoft : color.surfaceMuted,
+      }}
+    >
+      {children}
+    </View>
   );
 }
 

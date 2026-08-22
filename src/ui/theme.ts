@@ -83,108 +83,117 @@ export interface ColorTokens {
 }
 
 const LIGHT_COLORS: ColorTokens = {
-  background: '#F3F4F8',
-  surface: '#FFFFFF',
-  surfaceElevated: '#FFFFFF',
-  surfaceSunken: '#EEF0F5',
-  surfaceMuted: '#E9EBF0',
+  // NOCTURNE light. Violet-tinted throughout — there is deliberately no
+  // #FFFFFF surface. The owner's complaint about the previous palette was
+  // "too much white", and a near-white card on a near-white canvas is what
+  // produced that. Elevation still reads lighter-as-higher (unlike the
+  // dark theme, where it reads brighter-as-higher via glow).
+  background: '#EDE9F9',
+  surface: '#F5F2FD',
+  surfaceElevated: '#FAF8FF',
+  surfaceSunken: '#E4DFF4',
+  surfaceMuted: '#DFDAF1',
 
-  textPrimary: '#151A22',
-  textSecondary: '#8B93A1',
-  textTertiary: '#AEB4BF',
+  textPrimary: '#16132A',
+  textSecondary: '#52496E',
+  textTertiary: '#7A7196',
 
-  border: '#D9DDE4',
-  borderStrong: '#C6CCD6',
-  divider: '#ECEEF2',
-  overlay: 'rgba(21,26,34,0.45)',
+  border: '#D7CFEC',
+  borderStrong: '#C3B8E0',
+  divider: '#E7E2F6',
+  overlay: 'rgba(22,19,42,0.45)',
 
-  primary: '#5A54D1',
-  primaryPressed: '#4A45B8',
-  primarySolid: '#5A54D1',
+  primary: '#5B4BD6',
+  primaryPressed: '#4636B5',
+  primarySolid: '#5B4BD6',
   onPrimary: '#FFFFFF',
-  primarySoft: '#EFEDFD',
-  primarySoftText: '#4A45B8',
-  accentGradient: ['#5A54D1', '#7B5BE0', '#9D6BF0'],
+  primarySoft: '#E3DDFB',
+  primarySoftText: '#4636B5',
+  accentGradient: ['#5B4BD6', '#7B5BE0', '#9D6BF0'],
   avatarGradient: ['#6A63F0', '#9D7BF5'],
   heroAccent: '#7CFFB2',
 
   success: '#1FA968',
-  successSoft: '#E4F8EE',
+  successSoft: '#DDF3E8',
   successText: '#157A4B',
 
-  disabled: '#EEF0F5',
-  disabledContent: '#AEB4BF',
+  disabled: '#E4DFF4',
+  disabledContent: '#8B82A6',
 
   severity: {
     critical: { fg: '#C42A43', soft: '#FBE4E8', softText: '#A31F35' },
     high: { fg: '#B4551A', soft: '#FBEADD', softText: '#8F410F' },
     moderate: { fg: '#E39A00', soft: '#FAF0D5', softText: '#8A6100' },
     info: { fg: '#0E7490', soft: '#DFF3F8', softText: '#0B5E76' },
-    success: { fg: '#1FA968', soft: '#E4F8EE', softText: '#157A4B' },
+    success: { fg: '#1FA968', soft: '#DDF3E8', softText: '#157A4B' },
   },
 
-  evidence: { A: '#1FA968', B: '#4C8DB8', C: '#E39A00', D: '#C42A43' },
+  // Brand-family ramp, NOT the severity scale. Previously A/B/C/D reused the
+  // severity hexes verbatim, so a "C" evidence badge rendered in the exact
+  // amber a moderate interaction warning uses — a user who learned
+  // "amber = warning" on Summary carried that reading into an evidence badge
+  // meaning "weaker research". Zero hex overlap with `severity` is required.
+  evidence: { A: '#7C5CE8', B: '#6D7FD4', C: '#8E82B8', D: '#6B6484' },
 
-  chartInk: '#5A54D1',
-  chartTrack: '#E9EBF0',
-  chartPeakLabel: '#151A22',
+  chartInk: '#5B4BD6',
+  chartTrack: '#E0DAF3',
+  chartPeakLabel: '#16132A',
 };
 
 const DARK_COLORS: ColorTokens = {
-  background: '#0F1117',
-  surface: '#181B23',
-  surfaceElevated: '#20242E',
-  surfaceSunken: '#13161C',
-  surfaceMuted: '#252A34',
+  // NOCTURNE dark — the chosen direction. A near-black violet-tinted canvas
+  // where violet acts as a light source rather than a paint colour: elevation
+  // reads as "how much light this surface catches", so surfaces step up in
+  // brightness and the one hero metric per screen carries a glow.
+  background: '#0B0A14',
+  surface: '#141225',
+  surfaceElevated: '#1D1A33',
+  surfaceSunken: '#08070F',
+  surfaceMuted: '#241F42',
 
-  textPrimary: '#F4F5F8',
-  textSecondary: '#969EAD',
-  textTertiary: '#6E7683',
+  textPrimary: '#F2F0FF',
+  // Lightened from the first Nocturne pass (#8B86A8), which computed to
+  // exactly 4.50:1 on surfaceMuted — sitting on the AA floor with no margin,
+  // so ordinary gamma variance across devices pushed real renders under it.
+  textSecondary: '#9992BC',
+  textTertiary: '#7871A0',
 
-  border: '#343A47',
-  borderStrong: '#3F4757',
-  divider: '#242A34',
-  overlay: 'rgba(5,6,10,0.60)',
+  border: '#2A2745',
+  borderStrong: '#3A3560',
+  divider: '#221E3A',
+  overlay: 'rgba(5,3,10,0.62)',
 
-  primary: '#817AF4',
-  primaryPressed: '#6E67E0',
-  primarySolid: '#5A54D1',
+  primary: '#9C82FF',
+  primaryPressed: '#6244E8',
+  primarySolid: '#7856F8',
   onPrimary: '#FFFFFF',
-  primarySoft: '#292641',
-  primarySoftText: '#A99FF7',
-  accentGradient: ['#5A54D1', '#7459D9', '#8B63E8'],
-  // Darkened ~8% L from the earlier spec-v2 §1 values: the white avatar icon
-  // sits centred on this gradient, so both stops and their blended midpoint
-  // must clear the 3:1 WCAG non-text floor. The old ['#8981F7','#B79BFA'] ramp
-  // failed (stop1 2.31:1, midpoint 2.72:1 — THEA-78). This pair keeps the same
-  // violet→lavender direction and hue with margin (stop0 4.81:1, stop1 3.36:1,
-  // midpoint 4.02:1). Light-mode avatarGradient stays lighter — its icon still
-  // clears the floor there.
+  primarySoft: '#241F42',
+  primarySoftText: '#C4B5FD',
+  accentGradient: ['#5B3FE0', '#7C5CFF', '#9D7BF5'],
   avatarGradient: ['#655BF5', '#9B74F8'],
-  // Unchanged — already light enough against the dark-mode hero gradient,
-  // which is itself lighter than light-mode's (spec-v2 §1).
   heroAccent: '#7CFFB2',
 
   success: '#45C987',
-  successSoft: '#183629',
+  successSoft: '#12301F',
   successText: '#8FE3B7',
 
-  disabled: '#20242E',
-  disabledContent: '#5B6472',
+  disabled: '#1D1A33',
+  disabledContent: '#5C5578',
 
   severity: {
     critical: { fg: '#FF6B85', soft: '#3A1721', softText: '#FF9DAF' },
     high: { fg: '#FF9E5C', soft: '#3A2412', softText: '#FFC199' },
     moderate: { fg: '#F2B84D', soft: '#3A2E12', softText: '#F6CE82' },
     info: { fg: '#55C7DE', soft: '#123039', softText: '#8BDBEB' },
-    success: { fg: '#45C987', soft: '#183629', softText: '#8FE3B7' },
+    success: { fg: '#45C987', soft: '#12301F', softText: '#8FE3B7' },
   },
 
-  evidence: { A: '#45C987', B: '#6BA8D8', C: '#F2B84D', D: '#FF6B85' },
+  // See the light-mode note: brand-family ramp, zero overlap with `severity`.
+  evidence: { A: '#9B87F5', B: '#7C93D6', C: '#A99FC2', D: '#7E7799' },
 
-  chartInk: '#817AF4',
-  chartTrack: '#252A34',
-  chartPeakLabel: '#F4F5F8',
+  chartInk: '#9C82FF',
+  chartTrack: '#241F42',
+  chartPeakLabel: '#F2F0FF',
 };
 
 export const COLOR_TOKENS: Record<ThemeMode, ColorTokens> = { light: LIGHT_COLORS, dark: DARK_COLORS };

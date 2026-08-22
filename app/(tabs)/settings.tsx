@@ -1,46 +1,171 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Alert, Platform, View } from 'react-native';
+import {
+  Bell,
+  BellRing,
+  BookOpen,
+  ChevronRight,
+  Download,
+  FileText,
+  Gauge,
+  IdCard,
+  Layers,
+  Lock,
+  LogIn,
+  Palette,
+  Ruler,
+  ShieldCheck,
+  Target,
+  Trash2,
+  User,
+} from 'lucide-react-native';
+import { useMemo, type ReactNode } from 'react';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { GOALS_BY_ID } from '../../src/domain/goals';
-import { useAppStore } from '../../src/store/useAppStore';
-import { formatLength, formatMass } from '../../src/lib/units';
+import { RISK_TOLERANCE_BY_LEVEL, GOALS_BY_ID } from '../../src/domain/goals';
+import { getPeptide } from '../../src/domain/peptides';
+import { generateSchedule } from '../../src/engine/cycle';
+import { computeDose, formatDose } from '../../src/engine/dosing';
+import { addDays, today } from '../../src/lib/date';
 import { cancelAllReminders } from '../../src/lib/notifications';
-import { Display, Screen, Small, Spacer } from '../../src/ui/components';
-import { List, ListItem, Section } from '../../src/ui/primitives';
-import { spacing, useTheme } from '../../src/ui/theme';
+import { formatLength, formatMass } from '../../src/lib/units';
+import { selectAdherence, useActiveStack, useAppStore } from '../../src/store/useAppStore';
+import { Badge, Body, Caption, Divider, Row, Screen, Small, Spacer } from '../../src/ui/components';
+import { EvidenceBadge, PhaseBar, Tile } from '../../src/ui/nocturne';
+import { Avatar, Disclosure } from '../../src/ui/primitives';
+import { riskLevelTone, RiskPicker } from '../../src/ui/RiskPicker';
+import { fonts, radius, spacing, typography, useTheme } from '../../src/ui/theme';
 
 /**
- * Settings hub (THEA-4 page 5, design transform THEA-52). Each row opens its
- * own screen.
+ * Me — NOCTURNE (design-lab/agents/14-me.sh).
  *
- * Rebuilt on `Section`/`List`/`ListItem` (THEA-38 primitives) — this screen
- * predated that redesign and was the one surface still on the flat bordered
- * `ListRow`, so its five groups read as a wall of identical boxes next to
- * Summary/Logger/Results reading as fixed hierarchy. Grouping is unchanged;
- * only the anatomy is.
+ * The old version was ~10 identically-shaped bordered `Section` cards in one
+ * scroll (design-lab/00-audit.md: "the worst screen in the app") — body,
+ * recovery, goals, risk, current peptides, health, reminders, side-effects,
+ * about, erase-data, all carrying equal weight regardless of how often they're
+ * touched. This version ranks by real use: a compact identity header, then
+ * exactly two promoted tiles (the risk dial and the current stack — the two
+ * things the audit and the brief both call out), then everything else
+ * demoted into a small number of quiet grouped rows, with the one genuinely
+ * destructive action pulled out on its own.
  *
- * The account/data rows — Privacy, Manage Data, Lock App and Delete
- * Account — are handled with extra care: Lock App is non-destructive (it only
- * re-locks the disclaimer gate, keeping local data — see THEA-12a F1, which
- * is what made that guarantee actually true), while Privacy, Manage Data and
- * Delete Account carry legal/irreversible weight and are gated behind
- * compliance review (see THEA-12a) rather than shipping unreviewed copy.
- *
- * "Lock App", not "Log out": locking only re-gates the local disclaimer and
- * keeps all local data (THEA-12a F2) — it is a different, non-destructive
- * concept from signing out of the account below, and the two must never read
- * as duplicates (THEA-97 §1.1). An account is now optional and additive
- * (THEA-90 / THEA-84c) — the app remains fully usable anonymous/on-device,
- * this section is "back up / sync", never a wall in front of the product.
- * The bottom "Security" section (was "Account") kept its old name freed up
- * for the new status row below, per THEA-97 §1.1's "Sign out ≠ Lock app ≠
- * Delete account — three distinct, clearly-separated actions."
+ * The risk dial in particular gets a real presentation here for the first
+ * time on this screen (`RiskPicker`'s own doc comment already promised "the
+ * Me tab" as one of its three homes — this was the missing one). It
+ * communicates AGENTS.md's two load-bearing invariants visually rather than
+ * in a paragraph: the gauge below only ever spans published low → typical →
+ * high with nothing past the last segment, and "what moving it changes"
+ * states plainly that only dose amount moves — selection and stack size are
+ * fixed, mirrors the same two facts app/onboarding/index.tsx's review step
+ * already states, so the two screens agree.
  */
 
 function Chevron() {
   const { color } = useTheme();
-  return <Ionicons name="chevron-forward" size={18} color={color.textTertiary} />;
+  return <ChevronRight size={16} color={color.textTertiary} />;
+}
+
+/** Mirrors `RowIcon` in app/onboarding/index.tsx's risk-review step exactly,
+ *  so the "what changes" comparison reads as the same component on both
+ *  screens. */
+function RowIcon({ accent = false, children }: { accent?: boolean; children: ReactNode }) {
+  const { color } = useTheme();
+  return (
+    <View
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: radius.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: accent ? color.primarySoft : color.surfaceMuted,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  const { color } = useTheme();
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={[typography.data, { fontSize: 17, color: color.textPrimary }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Caption style={{ marginTop: 2 }}>{label}</Caption>
+    </View>
+  );
+}
+
+/** Five discrete positions, coloured up to the current level — status is
+ *  never colour alone, so the numeral label always sits beside these. Purely
+ *  decorative for accessibility purposes: the call site wraps this together
+ *  with the text readout in one `accessible` node (see the risk-dial face,
+ *  same pattern as `CountdownRing` in src/ui/nocturne.tsx), which already
+ *  collapses this whole subtree into that single announcement — these dots
+ *  carry no accessibility props of their own on purpose. */
+function RiskDots({ value }: { value: 1 | 2 | 3 | 4 | 5 }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const fg = theme.tone(riskLevelTone(value)).fg;
+  return (
+    <Row gap={spacing.xs}>
+      {([1, 2, 3, 4, 5] as const).map((level) => (
+        <View
+          key={level}
+          style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: level <= value ? fg : color.border }}
+        />
+      ))}
+    </Row>
+  );
+}
+
+function QuietGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={{ marginBottom: spacing.xl }}>
+      <Caption style={{ marginBottom: spacing.sm }}>{title}</Caption>
+      <Tile elevation="low">{children}</Tile>
+    </View>
+  );
+}
+
+function QuietRow({
+  icon,
+  label,
+  value,
+  onPress,
+  last = false,
+}: {
+  icon: ReactNode;
+  label: string;
+  value?: string;
+  onPress: () => void;
+  last?: boolean;
+}) {
+  const theme = useTheme();
+  const { color } = theme;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}: ${value}` : label}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.quietRow,
+        { borderBottomColor: color.divider, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth, opacity: pressed ? 0.7 : 1 },
+      ]}
+    >
+      <View style={[styles.rowIconWrap, { backgroundColor: color.surfaceMuted }]}>{icon}</View>
+      <Text style={[typography.body, { color: color.textPrimary, flex: 1 }]} numberOfLines={1}>
+        {label}
+      </Text>
+      {value ? (
+        <Text style={[typography.small, { color: color.textSecondary }]} numberOfLines={1}>
+          {value}
+        </Text>
+      ) : null}
+      <Chevron />
+    </Pressable>
+  );
 }
 
 export default function SettingsScreen() {
@@ -51,6 +176,8 @@ export default function SettingsScreen() {
   const settings = useAppStore((s) => s.settings);
   const updateProfile = useAppStore((s) => s.updateProfile);
   const session = useAppStore((s) => s.session);
+  const doseLogs = useAppStore((s) => s.doseLogs);
+  const stack = useActiveStack();
 
   const goalSummary =
     profile && profile.goals.length > 0
@@ -73,24 +200,47 @@ export default function SettingsScreen() {
       ? 'At injection time'
       : `${settings.alarmOffsetsMin.length} alert${settings.alarmOffsetsMin.length === 1 ? '' : 's'} per dose`;
 
+  // Same 14-day adherence math as the Today screen (selectAdherence over a
+  // generated 14-day schedule) — reused, not reinvented, so the number
+  // agrees wherever it's shown.
+  const adherencePct = useMemo(() => {
+    if (!stack) return null;
+    const doses = generateSchedule(stack, addDays(today(), -13), today());
+    const { pct, taken, skipped } = selectAdherence(doses, doseLogs);
+    return taken + skipped === 0 ? null : pct;
+  }, [stack, doseLogs]);
+
+  const riskLevel = profile?.riskTolerance ?? 3;
+  const activeRisk = RISK_TOLERANCE_BY_LEVEL[riskLevel];
+
+  // Concrete proof of the two AGENTS.md invariants using real numbers: the
+  // first non-withheld stack item's dose today vs. what it would be with the
+  // dial turned all the way to Maximum. computeDose is a pure function — this
+  // calls it a second time with a hypothetical risk value purely to render
+  // the comparison, it changes nothing in the store.
+  const workedExample = useMemo(() => {
+    if (!stack || !profile) return null;
+    const item = stack.items.find((i) => !i.doseWithheld);
+    if (!item) return null;
+    const peptide = getPeptide(item.peptideId);
+    if (!peptide) return null;
+    const current = computeDose(peptide, profile);
+    const atMax = computeDose(peptide, { ...profile, riskTolerance: 5 });
+    if (current.withheld || atMax.withheld) return null;
+    return { peptide, current, atMax, same: current.dose.value === atMax.dose.value };
+  }, [stack, profile]);
+
   const LOCK_MESSAGE =
     'You will need to accept the safety disclaimer again to get back in. Nothing is deleted — your profile, stacks and logs stay on this device.';
 
   const lockApp = () => {
-    // Reminders live in the OS, not AsyncStorage — leaving them scheduled
-    // would keep naming the user's compounds on the lock screen of an app
-    // they just locked (THEA-12a §5). onboarding re-syncs them on unlock.
     void cancelAllReminders();
-    // Non-destructive: re-locks the disclaimer gate, keeps all local data.
-    // True as of THEA-12a F1 — onboarding now merges into the existing
-    // profile on re-entry instead of overwriting it with fresh defaults.
     updateProfile({ acceptedDisclaimerAt: undefined, acceptedTermsAt: undefined });
     router.replace('/');
   };
 
-  const onLogOut = () => {
+  const onLockApp = () => {
     if (Platform.OS === 'web') {
-      // Alert has no buttons on web; fall back to confirm().
       // eslint-disable-next-line no-alert
       if (typeof confirm === 'function' && !confirm(`Lock the app?\n\n${LOCK_MESSAGE}`)) return;
       lockApp();
@@ -105,108 +255,337 @@ export default function SettingsScreen() {
   return (
     <Screen>
       <Spacer size={spacing.md} />
-      <Display>Settings</Display>
 
-      <Section title="Account">
-        <List>
-          {session ? (
-            <ListItem
-              title={session.email}
-              detail="Signed in"
-              meta={<Chevron />}
-              onPress={() => router.push('/settings/account')}
-            />
-          ) : (
-            <ListItem
-              title="Create account or sign in"
-              detail="Back up your profile and sync across devices"
-              meta={<Chevron />}
-              onPress={() => router.push('/settings/account')}
-            />
-          )}
-        </List>
-      </Section>
+      {/* Compact identity header — not a settings card. */}
+      <Row gap={spacing.md} align="center">
+        {session ? (
+          <Avatar initials={session.email[0]?.toUpperCase()} size={52} />
+        ) : (
+          <Avatar icon={<User size={20} color={color.onPrimary} strokeWidth={2} />} size={52} />
+        )}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[typography.title, { color: color.textPrimary }]} numberOfLines={1}>
+            {session ? session.email : 'Guest profile'}
+          </Text>
+          <Small style={{ marginTop: 2 }}>{infoSummary}</Small>
+        </View>
+      </Row>
 
-      <Section title="Profile">
-        <List>
-          <ListItem title="Goals" detail={goalSummary} meta={<Chevron />} onPress={() => router.push('/settings/goals')} />
-          <ListItem title="My Info" detail={infoSummary} meta={<Chevron />} onPress={() => router.push('/settings/my-info')} />
-          <ListItem
-            title="Measurement units"
-            detail={`${settings.massUnit === 'kg' ? 'Kilograms' : 'Pounds'} · ${settings.lengthUnit === 'cm' ? 'Centimetres' : 'Feet & inches'}`}
-            meta={<Chevron />}
-            onPress={() => router.push('/settings/units')}
-          />
-        </List>
-      </Section>
+      {/* At-a-glance — only real, already-computed dataset numbers. */}
+      {profile ? (
+        <Row style={{ marginTop: spacing.lg }} gap={spacing.lg}>
+          <MiniStat label="Bodyweight" value={formatMass(profile.weightKg, settings.massUnit)} />
+          <MiniStat label="Active compounds" value={`${stack?.items.length ?? 0}`} />
+          <MiniStat label="Adherence · 14d" value={adherencePct === null ? '—' : `${adherencePct}%`} />
+        </Row>
+      ) : null}
 
-      <Section title="Reminders">
-        <List>
-          <ListItem title="Alarm" detail={alarmSummary} meta={<Chevron />} onPress={() => router.push('/settings/alarm')} />
-          <ListItem
-            title="Notifications"
-            detail={`${activeNotifications} of 4 categories on`}
-            meta={<Chevron />}
-            onPress={() => router.push('/settings/notifications')}
-          />
-        </List>
-      </Section>
+      <Spacer size={spacing.xl} />
 
-      <Section title="App">
-        <List>
-          <ListItem
-            title="Theme"
-            detail={settings.theme === 'dark' ? 'Dark' : 'System'}
-            meta={<Chevron />}
-            onPress={() => router.push('/settings/theme')}
-          />
-          <ListItem
-            title="Library"
-            detail="Every compound, with sources"
-            meta={<Chevron />}
-            onPress={() => router.push('/settings/library')}
-          />
-        </List>
-      </Section>
+      {/* PROMOTED 1 — the risk dial. The most misunderstood control in the
+       *  product (design-lab/00-audit.md), so it earns a real presentation
+       *  rather than a picker + a caveat sentence. */}
+      <Tile
+        elevation="mid"
+        icon={<Gauge size={15} color={color.textSecondary} />}
+        caption="Risk dial"
+        style={{ marginBottom: spacing.lg }}
+      >
+        {/* Grouped as one accessibility node (same pattern as CountdownRing
+         *  in src/ui/nocturne.tsx) — the dots are decorative, so without this
+         *  a screen reader would either skip the value entirely or read the
+         *  dots and the label as two disconnected things. */}
+        <View
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={`Risk level ${riskLevel} of 5 — ${activeRisk.label}`}
+        >
+          <RiskDots value={riskLevel} />
+          <Row align="baseline" gap={spacing.xs} style={{ marginTop: spacing.sm }}>
+            <Text style={[typography.heading, { color: color.textPrimary }]}>{activeRisk.label}</Text>
+            <Small>· {riskLevel} of 5</Small>
+          </Row>
+        </View>
+        <Small style={{ marginTop: 2 }}>Changes dose only — never which compounds are selected</Small>
 
-      <Section title="Data & privacy">
-        <List>
-          <ListItem title="Privacy" detail="How your data is stored" meta={<Chevron />} onPress={() => router.push('/settings/privacy')} />
-          <ListItem
-            title="Manage data"
-            detail="Export as PDF, CSV or JSON"
-            meta={<Chevron />}
-            onPress={() => router.push('/settings/manage-data')}
-          />
-          <ListItem
-            title="Terms of Service"
-            detail="The agreement you accepted during setup"
-            meta={<Chevron />}
-            onPress={() => router.push('/settings/terms')}
-          />
-        </List>
-      </Section>
+        {profile ? (
+          <View style={{ marginTop: spacing.md }}>
+            <Disclosure label="How this works" summary="Anchors, the ceiling, and what stays fixed">
+              <View style={{ gap: spacing.lg }}>
+                <RiskPicker
+                  value={profile.riskTolerance}
+                  onChange={(next) => updateProfile({ riskTolerance: next })}
+                />
 
-      <Section title="Security" last>
-        <List>
-          <ListItem
-            title="Lock app"
-            detail="Re-locks the safety disclaimer. Your data stays on this device."
-            onPress={onLogOut}
-            meta={<Ionicons name="lock-closed-outline" size={18} color={color.textSecondary} />}
-          />
-          <ListItem
-            title="Delete account"
-            tone="critical"
-            meta={<Ionicons name="trash-outline" size={18} color={theme.tone('critical').fg} />}
-            onPress={() => router.push('/settings/delete-account')}
-          />
-        </List>
-      </Section>
+                <View>
+                  <Caption>Where this sits</Caption>
+                  <View style={{ marginTop: spacing.sm }}>
+                    {/* PhaseBar, reused from src/ui/nocturne.tsx: five equal
+                     *  segments spanning published low → typical → high,
+                     *  with a "current" marker — nothing rendered exists
+                     *  past the fifth segment, which is the visual for
+                     *  "never past the published maximum". */}
+                    <RiskPhaseGauge value={riskLevel} levelLabel={activeRisk.label} />
+                  </View>
+                  <Small style={{ marginTop: spacing.sm }}>
+                    Interpolates between the published low, typical and high doses — never past the published
+                    maximum.
+                  </Small>
+                </View>
 
-      <View style={{ marginTop: spacing.md, alignItems: 'center' }}>
-        <Small>The Stack — educational use only. Not medical advice.</Small>
+                <View>
+                  <Caption>What moving it changes</Caption>
+                  <Row justify="space-between" align="center" style={{ marginTop: spacing.md }}>
+                    <Row gap={spacing.sm} align="center" style={{ flex: 1 }}>
+                      <RowIcon accent>
+                        <Gauge size={16} color={theme.tone('accent').fg} />
+                      </RowIcon>
+                      <Text style={[typography.bodyStrong, { color: color.textPrimary }]}>Dose amount</Text>
+                    </Row>
+                    <Badge label="Adjusts" tone="success" />
+                  </Row>
+                  <Divider />
+                  <Row justify="space-between" align="center">
+                    <Row gap={spacing.sm} align="center" style={{ flex: 1 }}>
+                      <RowIcon>
+                        <Lock size={14} color={color.textSecondary} />
+                      </RowIcon>
+                      <Text style={[typography.bodyStrong, { color: color.textPrimary }]}>Compounds &amp; stack size</Text>
+                    </Row>
+                    <Row gap={spacing.xs} align="center">
+                      <Lock size={12} color={color.textSecondary} />
+                      <Small>Fixed</Small>
+                    </Row>
+                  </Row>
+                </View>
+
+                {workedExample ? (
+                  <View>
+                    <Caption>Worked example · {workedExample.peptide.name}</Caption>
+                    <Row justify="space-between" align="center" style={{ marginTop: spacing.sm }}>
+                      <View>
+                        <Small>Today · {riskLevel} of 5</Small>
+                        <Text style={[typography.data, { fontSize: 20, color: color.textPrimary, marginTop: 2 }]}>
+                          {formatDose(workedExample.current.dose)}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Small>Max · 5 of 5</Small>
+                        <Text style={[typography.data, { fontSize: 20, color: color.primary, marginTop: 2 }]}>
+                          {formatDose(workedExample.atMax.dose)}
+                        </Text>
+                      </View>
+                    </Row>
+                    <Small style={{ marginTop: spacing.sm }}>
+                      {workedExample.same
+                        ? `${formatDose(workedExample.current.dose)} is already ${workedExample.peptide.name}'s published ceiling — turning the dial up cannot add more.`
+                        : `Turning the dial to Maximum would raise this to ${formatDose(workedExample.atMax.dose)} — still never above the published range.`}
+                    </Small>
+                  </View>
+                ) : null}
+              </View>
+            </Disclosure>
+          </View>
+        ) : (
+          <Small style={{ marginTop: spacing.md }}>Complete your profile to set your risk dial.</Small>
+        )}
+      </Tile>
+
+      {/* PROMOTED 2 — current stack. */}
+      <Tile
+        elevation="mid"
+        icon={<Layers size={15} color={color.textSecondary} />}
+        caption={stack ? `Current stack · ${stack.items.length} active` : 'Current stack'}
+        style={{ marginBottom: spacing.xl }}
+      >
+        {stack && stack.items.length > 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            {stack.items.map((item) => {
+              const peptide = getPeptide(item.peptideId);
+              return (
+                <Row key={item.peptideId} gap={spacing.sm} align="center">
+                  {peptide ? <EvidenceBadge tier={peptide.evidence} size={22} /> : null}
+                  <Text style={[typography.body, { color: color.textPrimary, flex: 1 }]} numberOfLines={1}>
+                    {peptide?.name ?? item.peptideId}
+                  </Text>
+                  <Small>{item.doseWithheld ? 'Withheld' : formatDose(item.dose)}</Small>
+                </Row>
+              );
+            })}
+          </View>
+        ) : (
+          <Small>No active stack yet — build one to see it here.</Small>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={stack ? 'Manage stack' : 'Build a stack'}
+          onPress={() => router.push('/builder')}
+          style={({ pressed }) => [styles.tileLinkRow, { borderTopColor: color.divider, opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Text style={[typography.small, { fontFamily: fonts.semibold, color: color.primary }]}>
+            {stack ? 'Manage stack' : 'Build a stack'}
+          </Text>
+          <ChevronRight size={14} color={color.primary} />
+        </Pressable>
+      </Tile>
+
+      {/* Demoted — quiet grouped rows, everything the audit found stacked as
+       *  ten equal cards, now weighted well below the two tiles above. */}
+      <QuietGroup title="Profile & goals">
+        <QuietRow icon={<Target size={16} color={color.textSecondary} />} label="Goals" value={goalSummary} onPress={() => router.push('/settings/goals')} />
+        <QuietRow icon={<IdCard size={16} color={color.textSecondary} />} label="My Info" value={infoSummary} onPress={() => router.push('/settings/my-info')} />
+        <QuietRow
+          icon={<Ruler size={16} color={color.textSecondary} />}
+          label="Measurement units"
+          value={`${settings.massUnit === 'kg' ? 'Kilograms' : 'Pounds'} · ${settings.lengthUnit === 'cm' ? 'Centimetres' : 'Feet & inches'}`}
+          onPress={() => router.push('/settings/units')}
+          last
+        />
+      </QuietGroup>
+
+      <QuietGroup title="Reminders">
+        <QuietRow icon={<Bell size={16} color={color.textSecondary} />} label="Alarm" value={alarmSummary} onPress={() => router.push('/settings/alarm')} />
+        <QuietRow
+          icon={<BellRing size={16} color={color.textSecondary} />}
+          label="Notifications"
+          value={`${activeNotifications} of 4 on`}
+          onPress={() => router.push('/settings/notifications')}
+          last
+        />
+      </QuietGroup>
+
+      <QuietGroup title="App">
+        <QuietRow
+          icon={<Palette size={16} color={color.textSecondary} />}
+          label="Theme"
+          value={settings.theme === 'dark' ? 'Dark' : settings.theme === 'light' ? 'Light' : 'System'}
+          onPress={() => router.push('/settings/theme')}
+        />
+        <QuietRow
+          icon={<BookOpen size={16} color={color.textSecondary} />}
+          label="Library"
+          value="Every compound, with sources"
+          onPress={() => router.push('/settings/library')}
+          last
+        />
+      </QuietGroup>
+
+      <QuietGroup title="Account">
+        {session ? (
+          <QuietRow icon={<User size={16} color={color.textSecondary} />} label={session.email} value="Signed in" onPress={() => router.push('/settings/account')} />
+        ) : (
+          <QuietRow
+            icon={<LogIn size={16} color={color.textSecondary} />}
+            label="Create account or sign in"
+            value="Back up & sync"
+            onPress={() => router.push('/settings/account')}
+          />
+        )}
+        <QuietRow icon={<Lock size={16} color={color.textSecondary} />} label="Lock app" value="Re-locks the disclaimer" onPress={onLockApp} last />
+      </QuietGroup>
+
+      <QuietGroup title="Data & privacy">
+        <QuietRow icon={<ShieldCheck size={16} color={color.textSecondary} />} label="Privacy" value="How your data is stored" onPress={() => router.push('/settings/privacy')} />
+        <QuietRow icon={<Download size={16} color={color.textSecondary} />} label="Manage data" value="Export as PDF, CSV or JSON" onPress={() => router.push('/settings/manage-data')} />
+        <QuietRow icon={<FileText size={16} color={color.textSecondary} />} label="Terms of Service" onPress={() => router.push('/settings/terms')} last />
+      </QuietGroup>
+
+      {/* Destructive — visually separated from every ordinary row above,
+       *  critical colour earned here because this one action is genuinely
+       *  irreversible. Label stays textPrimary rather than the critical hex:
+       *  that hex doesn't reliably clear 4.5:1 body-text contrast on every
+       *  surface in light mode, so only the icon, border and chevron (a 3:1
+       *  non-text threshold) carry it. */}
+      <View style={{ marginTop: spacing.xs }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Delete account — permanently erases all data on this device"
+          onPress={() => router.push('/settings/delete-account')}
+          style={({ pressed }) => [
+            styles.destructiveRow,
+            { backgroundColor: color.surface, borderColor: theme.tone('critical').fg, opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <View style={[styles.rowIconWrap, { backgroundColor: color.surfaceMuted }]}>
+            <Trash2 size={16} color={theme.tone('critical').fg} />
+          </View>
+          <Text style={[typography.bodyStrong, { color: color.textPrimary, flex: 1 }]}>Delete account</Text>
+          <ChevronRight size={16} color={theme.tone('critical').fg} />
+        </Pressable>
+      </View>
+
+      <View style={{ marginTop: spacing.xl, alignItems: 'center' }}>
+        <Body muted style={{ textAlign: 'center' }}>
+          The Stack — educational use only. Not medical advice.
+        </Body>
       </View>
     </Screen>
   );
 }
+
+/** Five equal segments (Low · · Typical · · Max) with a "current" marker at
+ *  the dial's position — reuses `PhaseBar` from src/ui/nocturne.tsx rather
+ *  than a bespoke gauge. Position is centred inside its own segment (never
+ *  exactly on a boundary) so every level, including 5, gets the "current"
+ *  highlight rather than reading as "done".
+ *
+ *  `PhaseBar` itself only renders each segment's label as plain text (Low /
+ *  blank / Typical / blank / Max) with no indication of which one is
+ *  current — swiping through it would read as a bare, disconnected word
+ *  list. Wrapped here in one `accessible` node with an explicit position +
+ *  invariant readout, so the graphic states its value instead of just being
+ *  drawn. */
+function RiskPhaseGauge({ value, levelLabel }: { value: 1 | 2 | 3 | 4 | 5; levelLabel: string }) {
+  const segments = [
+    { key: '1', label: 'Low', length: 1 },
+    { key: '2', label: '', length: 1 },
+    { key: '3', label: 'Typical', length: 1 },
+    { key: '4', label: '', length: 1 },
+    { key: '5', label: 'Max', length: 1 },
+  ];
+  return (
+    <View
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`Dial position: ${levelLabel}, level ${value} of 5. Interpolates between the published low and maximum — it cannot go past the maximum.`}
+    >
+      <PhaseBar segments={segments} position={(value - 0.5) / 5} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  quietRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+  },
+  rowIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    minHeight: 44,
+  },
+  destructiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+  },
+});

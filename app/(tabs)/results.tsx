@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { Activity, MapPin, Repeat } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -10,52 +11,70 @@ import {
   metricsForGoals,
   type MetricInputKind,
 } from '../../src/domain/metrics';
-import type { DoseLog, GoalTarget, Measurement, Stack } from '../../src/domain/types';
-import { generateSchedule } from '../../src/engine/cycle';
+import { getPeptide } from '../../src/domain/peptides';
+import { SEVERITY_MAX } from '../../src/domain/sideEffects';
+import type {
+  CyclePhase,
+  DoseLog,
+  GoalTarget,
+  InjectionLog,
+  InjectionSite,
+  Measurement,
+  PhaseKind,
+  SideEffectLog,
+  Stack,
+} from '../../src/domain/types';
+import { buildCyclePhases, cyclePlanProgressPct, generateSchedule, groupPhasesByPeptide } from '../../src/engine/cycle';
 import { goalTargetProgressPct, seriesKey, summariseMeasurements, type MetricSummary } from '../../src/engine/progress';
-import { addDays, formatShort, relativeLabel, today } from '../../src/lib/date';
+import { addDays, diffDays, formatRange, formatShort, relativeLabel, startOfWeek, today } from '../../src/lib/date';
 import { selectAdherence, useActiveStack, useAppStore } from '../../src/store/useAppStore';
+import { INJECTION_SITE_LABELS } from '../../src/ui/BodyFigure';
 import { Sparkbars } from '../../src/ui/charts';
 import {
   Button,
-  Callout,
   Caption,
   Data,
   Display,
   EmptyState,
+  Heading,
   ProgressBar,
   Row,
   Screen,
   Small,
   Spacer,
-  StatTile,
   TextField,
 } from '../../src/ui/components';
-import { Disclosure, FocalMetric, List, ListItem, Section } from '../../src/ui/primitives';
-import { fonts, radius, spacing, typography, useTheme } from '../../src/ui/theme';
+import { DeltaBadge, PhaseBar, Tile, type PhaseBarSegment } from '../../src/ui/nocturne';
+import { Disclosure, List, ListItem, Section } from '../../src/ui/primitives';
+import { fonts, radius, spacing, typography, useTheme, withOpacity } from '../../src/ui/theme';
 
 /**
- * Results — the goal tracker, redesigned THEA-38b.
+ * Results — the goal tracker, redesigned THEA-38b, retinted NOCTURNE.
  *
- * This is now the app's one coherent "how am I doing" surface: the overview
- * stats that used to sit on Summary (adherence, active compounds, logged
- * injections) live here instead, next to the measurements you log against
- * your goals. Calendar keeps the day-to-day schedule; Analytics keeps the
- * training-specific deep dive; this screen is where progress across all of it
- * gets summarised.
+ * This is the app's one coherent "how am I doing" surface: overview stats
+ * (adherence, active compounds, logged injections), the measurements you log
+ * against your goals, cycle position, side-effect trend and injection-site
+ * rotation all live here. Calendar keeps the day-to-day schedule; Analytics
+ * keeps the training-specific deep dive.
  *
- * One measure — the first goal's — gets the `FocalMetric` treatment at the
- * top of the screen. Everything else, including that measure's own chart and
- * entry history, sits behind `Disclosure` rather than as an always-open card:
- * the old layout put N identical bordered cards on screen at once regardless
- * of how many goals were picked, which read as a wall of near-duplicate
- * blocks rather than one screen with a point of view.
+ * The focal measure — the first goal's — gets the hero `Tile` at the top:
+ * value, `DeltaBadge`, target (if set) and its own chart, all on the face.
+ * Everything else, including entry history and the add-a-reading form, sits
+ * behind a `Disclosure`. Previously this screen also carried a full-sentence
+ * callout explaining what the chart does, sitting directly above the chart
+ * itself, plus a near-duplicate sentence at the bottom — both deleted in
+ * favour of trusting the graphic; what caveat remains lives once, collapsed,
+ * in "About your data".
  *
  * It never sets a target or judges a value itself: the app is not a
  * clinician. The one exception — owner feedback, THEA-40 round 2 — is that
  * the focal metric can carry a target the user typed in themselves; the app
  * only measures distance already-logged readings have covered toward that
- * number, the same way it reports change since the first reading.
+ * number, the same way it reports change since the first reading. Because a
+ * DeltaBadge needs a "good" direction to tint, and the app has no basis to
+ * judge one without a target (which direction of, say, bodyweight is
+ * "better" depends on the goal, not the metric — see `engine/progress.ts`),
+ * `neutralGoodDirection` picks a direction guaranteed to render untoned.
  */
 
 interface Descriptor {
@@ -81,7 +100,7 @@ function valueLabel(value: number, d: Pick<Descriptor, 'kind' | 'unit' | 'precis
   return `${num} ${d.unit}`;
 }
 
-/** Splits a value into the pieces `FocalMetric` wants — a figure and a trailing unit. */
+/** Splits a value into the pieces the hero figure wants — a number and a trailing unit. */
 function focalValue(value: number, d: Descriptor): { value: string; unit?: string } {
   const num = formatNumber(value, d.precision);
   if (d.kind === 'scale') return { value: num, unit: `/ ${SCALE_MAX}` };
@@ -102,6 +121,66 @@ function changeLineText(descriptor: Descriptor, summary: MetricSummary): string 
   return change === 0 ? `No change since ${since}` : `${arrow} ${magnitude}${pct} since ${since}`;
 }
 
+/** Direction toward the user's own stated target — not a value judgement, just which way they said they want to move. */
+function targetGoodDirection(target: GoalTarget): 'up' | 'down' {
+  return target.value >= target.baseline ? 'up' : 'down';
+}
+
+/**
+ * Without a target the app has no basis to call either direction of a raw
+ * metric "good" (engine/progress.ts never judges one). Passing the direction
+ * opposite the observed change guarantees `DeltaBadge` renders its neutral,
+ * untoned style rather than an unearned green.
+ */
+function neutralGoodDirection(change: number): 'up' | 'down' {
+  return change > 0 ? 'down' : 'up';
+}
+
+/** Copy for a series with fewer than two points — never drawn as a chart. */
+function chartEmptyMessage(count: number): string {
+  return count === 0 ? 'Log two readings to see a trend.' : 'Log one more reading to see a trend.';
+}
+
+/**
+ * The chart every measure gets — a single-hue `Sparkbars` series against the
+ * tile's own neutral surface. Below two points there is nothing to show a
+ * trend with, so this renders a plain empty state naming how many more
+ * readings are needed rather than a chart that would only ever draw one bar.
+ */
+function MetricChart({
+  descriptor,
+  summary,
+  height = 34,
+}: {
+  descriptor: Descriptor;
+  summary?: MetricSummary;
+  height?: number;
+}) {
+  const theme = useTheme();
+  const { color } = theme;
+  const count = summary?.count ?? 0;
+
+  if (!summary || count < 2) {
+    return <Small>{chartEmptyMessage(count)}</Small>;
+  }
+
+  return (
+    <View>
+      <Sparkbars
+        values={summary.points.map((p) => p.value)}
+        height={height}
+        accessibilityLabel={`${descriptor.label} over ${summary.count} readings: ${summary.points
+          .map((p) => valueLabel(p.value, descriptor))
+          .join(', ')}`}
+      />
+      <Row justify="space-between" style={{ marginTop: spacing.sm }}>
+        <Caption color={color.textTertiary}>{formatShort(summary.points[0]!.date)}</Caption>
+        <Caption color={color.textTertiary}>{formatShort(summary.points[summary.points.length - 1]!.date)}</Caption>
+      </Row>
+    </View>
+  );
+}
+
 export default function ResultsScreen() {
   const theme = useTheme();
   const { color } = theme;
@@ -114,6 +193,7 @@ export default function ResultsScreen() {
   const stack = useActiveStack();
   const doseLogs = useAppStore((s) => s.doseLogs);
   const injectionLogs = useAppStore((s) => s.injectionLogs);
+  const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
 
   const summaries = useMemo(() => summariseMeasurements(measurements), [measurements]);
   const summaryByKey = useMemo(() => new Map(summaries.map((s) => [s.key, s])), [summaries]);
@@ -189,10 +269,13 @@ export default function ResultsScreen() {
       <Caption color={color.primary}>Progress</Caption>
       <Display style={{ marginTop: spacing.sm, marginBottom: spacing.lg }}>Results</Display>
 
-      <Callout tone="info" title="Your own measurements">
-        The app charts what you enter and shows the change between readings. It does not set targets or say what a
-        value should be — that is between you and a clinician.
-      </Callout>
+      <Disclosure label="About your data" summary="What this screen tracks, and what it doesn't">
+        <Small>
+          The app charts what you enter and shows the change between readings. It never sets a target or judges a
+          value — that&apos;s between you and a clinician. A gap in your readings shows up as a gap in the chart;
+          nothing is filled in for you.
+        </Small>
+      </Disclosure>
       <Spacer size={spacing.lg} />
 
       {primary ? (
@@ -216,6 +299,16 @@ export default function ResultsScreen() {
           </Small>
         </Section>
       )}
+      <Spacer size={spacing.lg} />
+
+      <CyclePhaseSection stack={stack} />
+      <Spacer size={spacing.lg} />
+
+      <SideEffectTrendTile logs={sideEffectLogs} />
+      <Spacer size={spacing.lg} />
+
+      <SiteRotationTile logs={injectionLogs} />
+      <Spacer size={spacing.lg} />
 
       <OverviewSection
         stack={stack}
@@ -223,6 +316,7 @@ export default function ResultsScreen() {
         injectionLogs={injectionLogs}
         onOpenAnalytics={() => router.push('/analytics')}
       />
+      <Spacer size={spacing.xxl} />
 
       {rest.length > 0 ? (
         <Section title="Other measures" gap={spacing.lg}>
@@ -241,17 +335,13 @@ export default function ResultsScreen() {
 
       <CustomMeasureSection onAdd={addMeasurement} />
 
-      <Small style={{ marginTop: spacing.sm }}>
-        Everything here is what you logged. A gap in your readings shows up as a gap in the chart — nothing is filled
-        in for you.
-      </Small>
       <Spacer size={spacing.xxl} />
     </Screen>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Primary metric — the one focal figure on this screen
+// Primary metric — the one hero figure on this screen
 // ---------------------------------------------------------------------------
 
 function PrimaryMetricSection({
@@ -277,26 +367,57 @@ function PrimaryMetricSection({
   const { color } = theme;
   const latest = summary?.latest ?? null;
   const figure = latest != null ? focalValue(latest, descriptor) : { value: '—' };
-  const changeText = summary && summary.change !== null && summary.first !== null ? changeLineText(descriptor, summary) : undefined;
+  const change = summary?.change ?? null;
+  const sinceLabel = summary && change !== null ? `since ${formatShort(summary.points[0]!.date)}` : undefined;
   const historySummary = entries.length > 0 ? `${entries.length} reading${entries.length === 1 ? '' : 's'} logged` : 'No readings yet';
   const progressPct = target ? goalTargetProgressPct(target, latest) : null;
+  const goodDirection = target ? targetGoodDirection(target) : change !== null ? neutralGoodDirection(change) : undefined;
 
   return (
-    <Section tone={2} gap={spacing.lg}>
-      <FocalMetric eyebrow={descriptor.label} value={figure.value} unit={figure.unit} meta={changeText ?? descriptor.hint} />
+    <Tile elevation="hero" caption={descriptor.label}>
+      <Row justify="space-between" align="flex-end" wrap gap={spacing.sm}>
+        <Text style={[typography.metric, { color: color.textPrimary }]} numberOfLines={1} adjustsFontSizeToFit>
+          {figure.value}
+          {figure.unit ? <Text style={[typography.heading, { color: color.textTertiary }]}>{` ${figure.unit}`}</Text> : null}
+        </Text>
+        {change !== null && goodDirection ? (
+          <DeltaBadge
+            value={change}
+            goodDirection={goodDirection}
+            unit={descriptor.kind === 'scale' ? undefined : descriptor.unit || undefined}
+            decimals={descriptor.precision}
+          />
+        ) : null}
+      </Row>
+      {sinceLabel ? (
+        <Caption color={color.textTertiary} style={{ marginTop: spacing.xs }}>
+          {sinceLabel}
+        </Caption>
+      ) : null}
+
       {target && progressPct !== null ? (
-        <View>
+        <View style={{ marginTop: spacing.md }}>
           <ProgressBar value={progressPct} tone="accent" />
           <Caption color={color.textTertiary} style={{ marginTop: spacing.xs }}>
             {`${Math.round(progressPct)}% of the way to your target of ${valueLabel(target.value, descriptor)}`}
           </Caption>
         </View>
       ) : null}
-      <GoalTargetEditor descriptor={descriptor} target={target} latest={latest} onSet={onSetTarget} onClear={onClearTarget} />
-      <Disclosure label="History & log a reading" summary={historySummary}>
-        <MetricDetail descriptor={descriptor} summary={summary} entries={entries} onAdd={onAdd} onRemove={onRemove} />
-      </Disclosure>
-    </Section>
+
+      <View style={{ marginTop: spacing.lg }}>
+        <MetricChart descriptor={descriptor} summary={summary} height={120} />
+      </View>
+
+      <View style={{ marginTop: spacing.lg }}>
+        <GoalTargetEditor descriptor={descriptor} target={target} latest={latest} onSet={onSetTarget} onClear={onClearTarget} />
+      </View>
+
+      <View style={{ marginTop: spacing.lg }}>
+        <Disclosure label="History & log a reading" summary={historySummary}>
+          <ReadingsAndAddForm descriptor={descriptor} entries={entries} onAdd={onAdd} onRemove={onRemove} />
+        </Disclosure>
+      </View>
+    </Tile>
   );
 }
 
@@ -416,7 +537,7 @@ function MetricRow({
   );
 }
 
-/** Shared chart + recent entries + add-a-reading form, used by both the primary and secondary metrics. */
+/** Chart + recent entries + add-a-reading form, used by every secondary measure's Disclosure. */
 function MetricDetail({
   descriptor,
   summary,
@@ -430,30 +551,32 @@ function MetricDetail({
   onAdd: (entry: Omit<Measurement, 'id'>) => void;
   onRemove: (id: string) => void;
 }) {
+  return (
+    <View>
+      <MetricChart descriptor={descriptor} summary={summary} />
+      <ReadingsAndAddForm descriptor={descriptor} entries={entries} onAdd={onAdd} onRemove={onRemove} />
+    </View>
+  );
+}
+
+/** Recent-entries list + add-a-reading form. Shared by the hero's own disclosure and `MetricDetail`. */
+function ReadingsAndAddForm({
+  descriptor,
+  entries,
+  onAdd,
+  onRemove,
+}: {
+  descriptor: Descriptor;
+  entries: Measurement[];
+  onAdd: (entry: Omit<Measurement, 'id'>) => void;
+  onRemove: (id: string) => void;
+}) {
   const theme = useTheme();
   const { color } = theme;
   const [adding, setAdding] = useState(false);
-  const hasData = Boolean(summary && summary.count >= 1);
 
   return (
     <View>
-      {hasData && summary ? (
-        <>
-          <Sparkbars
-            values={summary.points.map((p) => p.value)}
-            accessibilityLabel={`${descriptor.label} over ${summary.count} reading${summary.count === 1 ? '' : 's'}: ${summary.points
-              .map((p) => valueLabel(p.value, descriptor))
-              .join(', ')}`}
-          />
-          <Row justify="space-between" style={{ marginTop: spacing.sm }}>
-            <Caption color={color.textTertiary}>{formatShort(summary.points[0]!.date)}</Caption>
-            <Caption color={color.textTertiary}>{formatShort(summary.points[summary.points.length - 1]!.date)}</Caption>
-          </Row>
-        </>
-      ) : (
-        <Small>No readings yet — add your first below.</Small>
-      )}
-
       {entries.length > 0 ? (
         <View style={{ marginTop: spacing.lg }}>
           <List>
@@ -505,6 +628,293 @@ function MetricDetail({
 }
 
 // ---------------------------------------------------------------------------
+// Cycle phase — where the current week sits, per compound in the active stack
+// ---------------------------------------------------------------------------
+
+const PHASE_KIND_LABEL: Record<PhaseKind, string> = {
+  titration: 'Loading',
+  on: 'Maintenance',
+  washout: 'Off cycle',
+};
+
+interface CyclePhaseSummary {
+  peptideId: string;
+  peptideName: string;
+  segments: PhaseBarSegment[];
+  /** 0–1 fraction of the whole plan elapsed, for `PhaseBar`'s marker. */
+  position: number;
+  currentWeek: number;
+  totalWeeks: number;
+  currentLabel: string;
+}
+
+/**
+ * Reshapes one compound's `CyclePhase` blocks (from `buildCyclePhases`) into
+ * what the `PhaseBar` tile needs. Nothing here recomputes a schedule — it
+ * only derives a week count and a "now" fraction from dates the engine
+ * already produced, reusing `cyclePlanProgressPct` for the fraction so the
+ * bar's marker and the segment widths agree on the same total span.
+ */
+function summariseCyclePhases(peptideId: string, peptideName: string, phases: CyclePhase[], date: string): CyclePhaseSummary | null {
+  if (phases.length === 0) return null;
+  const start = phases[0]!.startDate;
+  const end = phases[phases.length - 1]!.endDate;
+  const totalDays = diffDays(start, end) + 1;
+  if (totalDays <= 0) return null;
+
+  const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
+  const clampedDate = date < start ? start : date > end ? end : date;
+  const currentWeek = Math.min(totalWeeks, Math.max(1, Math.ceil((diffDays(start, clampedDate) + 1) / 7)));
+  const pct = cyclePlanProgressPct(phases, date);
+  const current = phases.find((p) => date >= p.startDate && date <= p.endDate) ?? (date < start ? phases[0]! : phases[phases.length - 1]!);
+
+  const segments: PhaseBarSegment[] = phases.map((phase, index) => ({
+    key: `${phase.kind}-${index}`,
+    label: PHASE_KIND_LABEL[phase.kind],
+    length: Math.max(1, diffDays(phase.startDate, phase.endDate) + 1),
+    detail: formatRange(phase.startDate, phase.endDate),
+  }));
+
+  return {
+    peptideId,
+    peptideName,
+    segments,
+    position: pct === null ? 0 : pct / 100,
+    currentWeek,
+    totalWeeks,
+    currentLabel: PHASE_KIND_LABEL[current.kind],
+  };
+}
+
+function CyclePhaseSection({ stack }: { stack: Stack | null }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const date = today();
+
+  const items = useMemo(() => {
+    if (!stack) return [];
+    const byPeptide = groupPhasesByPeptide(buildCyclePhases(stack));
+    const summaries: CyclePhaseSummary[] = [];
+    for (const item of stack.items) {
+      const phases = byPeptide.get(item.peptideId);
+      if (!phases || phases.length === 0) continue;
+      const summary = summariseCyclePhases(item.peptideId, getPeptide(item.peptideId)?.name ?? item.peptideId, phases, date);
+      if (summary) summaries.push(summary);
+    }
+    return summaries;
+  }, [stack, date]);
+
+  if (items.length === 0) {
+    return (
+      <Tile elevation="mid" icon={<Repeat size={14} color={color.textSecondary} />} caption="Cycle phase">
+        <Small>No active stack cycle to show yet.</Small>
+      </Tile>
+    );
+  }
+
+  const primary = items[0]!;
+  const others = items.slice(1);
+
+  return (
+    <Tile elevation="mid" icon={<Repeat size={14} color={color.textSecondary} />} caption="Cycle phase">
+      <CyclePhaseRow summary={primary} showName={items.length > 1} />
+      {others.length > 0 ? (
+        <View style={{ marginTop: spacing.lg }}>
+          <Disclosure label="Other compounds' cycles" summary={`${others.length} more`}>
+            {others.map((summary, index) => (
+              <View key={summary.peptideId} style={{ marginTop: index === 0 ? 0 : spacing.lg }}>
+                <CyclePhaseRow summary={summary} showName />
+              </View>
+            ))}
+          </Disclosure>
+        </View>
+      ) : null}
+    </Tile>
+  );
+}
+
+function CyclePhaseRow({ summary, showName }: { summary: CyclePhaseSummary; showName: boolean }) {
+  const theme = useTheme();
+  const { color, mode } = theme;
+  const pctLabel = `${Math.round(summary.position * 100)}%`;
+  const heading = `${showName ? `${summary.peptideName} · ` : ''}Week ${summary.currentWeek} of ${summary.totalWeeks} · ${summary.currentLabel}`;
+
+  return (
+    <View>
+      <Row justify="space-between" align="center" gap={spacing.sm}>
+        <Heading style={{ flex: 1 }}>{heading}</Heading>
+        <View style={[styles.pillBadge, { backgroundColor: withOpacity(color.primary, mode === 'dark' ? 0.24 : 0.14) }]}>
+          <Data small color={color.textPrimary}>
+            {pctLabel}
+          </Data>
+        </View>
+      </Row>
+      <View style={{ marginTop: spacing.md }}>
+        <PhaseBar segments={summary.segments} position={summary.position} />
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Side-effect trend — the most recently logged symptom, gauge + direction
+// ---------------------------------------------------------------------------
+
+interface SideEffectTrend {
+  label: string;
+  latestSeverity: number;
+  /** latest − previous reading, for this label only. Null with fewer than two. */
+  change: number | null;
+  countThisWeek: number;
+}
+
+/** Reads only the featured label's own history — a symptom's trend is only meaningful against itself. */
+function summariseSideEffectTrend(logs: SideEffectLog[], date: string): SideEffectTrend | null {
+  if (logs.length === 0) return null;
+  const sorted = [...logs].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const label = sorted[0]!.label;
+  const forLabel = sorted.filter((entry) => entry.label === label);
+  const latestSeverity = forLabel[0]!.severity;
+  const change = forLabel.length >= 2 ? latestSeverity - forLabel[1]!.severity : null;
+  const weekStart = startOfWeek(date);
+  const countThisWeek = forLabel.filter((entry) => entry.date >= weekStart && entry.date <= date).length;
+  return { label, latestSeverity, change, countThisWeek };
+}
+
+function SeverityDots({ value, max }: { value: number; max: number }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const filled = Math.max(0, Math.min(max, value));
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ flexDirection: 'row', gap: spacing.xs }}
+    >
+      {Array.from({ length: max }, (_, i) => (
+        <View
+          key={i}
+          style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: i < filled ? color.chartInk : color.chartTrack }}
+        />
+      ))}
+    </View>
+  );
+}
+
+function SideEffectTrendTile({ logs }: { logs: SideEffectLog[] }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const date = today();
+  const trend = useMemo(() => summariseSideEffectTrend(logs, date), [logs, date]);
+
+  return (
+    <Tile elevation="mid" icon={<Activity size={14} color={color.textSecondary} />} caption="Side effects · this week">
+      {!trend ? (
+        <Small>No side effects logged yet.</Small>
+      ) : (
+        <View>
+          <Row justify="space-between" align="center">
+            <Heading>{trend.label}</Heading>
+            {/* Lower severity is unambiguously better, unlike a goal metric —
+             *  no target needed to know which direction to tint. */}
+            {trend.change !== null ? <DeltaBadge value={trend.change} goodDirection="down" decimals={0} /> : null}
+          </Row>
+          <View style={{ marginTop: spacing.md }}>
+            <SeverityDots value={trend.latestSeverity} max={SEVERITY_MAX} />
+          </View>
+          <Caption color={color.textTertiary} style={{ marginTop: spacing.sm }}>
+            {`Severity ${trend.latestSeverity}/${SEVERITY_MAX} · ${trend.countThisWeek} logged this week`}
+          </Caption>
+        </View>
+      )}
+    </Tile>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Injection-site rotation — a compact grid, not a sentence
+// ---------------------------------------------------------------------------
+
+const SITE_SHORT_LABEL: Record<InjectionSite, string> = {
+  abdomen_left: 'Abdomen L',
+  abdomen_right: 'Abdomen R',
+  thigh_left: 'Thigh L',
+  thigh_right: 'Thigh R',
+  upper_arm_left: 'Arm L',
+  upper_arm_right: 'Arm R',
+  glute_left: 'Glute L',
+  glute_right: 'Glute R',
+};
+
+interface SiteRotationSummary {
+  counts: Array<{ site: InjectionSite; count: number }>;
+  /** How many of the requested window were actually available. */
+  windowSize: number;
+  note: string;
+}
+
+function summariseSiteRotation(logs: InjectionLog[], windowSize: number): SiteRotationSummary | null {
+  if (logs.length === 0) return null;
+  const recent = [...logs].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, windowSize);
+
+  const tally = new Map<InjectionSite, number>();
+  for (const log of recent) tally.set(log.site, (tally.get(log.site) ?? 0) + 1);
+  const counts = [...tally.entries()].map(([site, count]) => ({ site, count })).sort((a, b) => b.count - a.count);
+
+  const values = counts.map((c) => c.count);
+  const spread = Math.max(...values) - Math.min(...values);
+  const note =
+    counts.length <= 1
+      ? 'Only one site used — rotating reduces irritation.'
+      : spread <= 1
+        ? 'Evenly rotated.'
+        : `${SITE_SHORT_LABEL[counts[0]!.site]} used most — rotate to the others too.`;
+
+  return { counts, windowSize: recent.length, note };
+}
+
+function SiteRotationTile({ logs }: { logs: InjectionLog[] }) {
+  const theme = useTheme();
+  const { color, mode } = theme;
+  const rotation = useMemo(() => summariseSiteRotation(logs, 8), [logs]);
+
+  return (
+    <Tile
+      elevation="mid"
+      icon={<MapPin size={14} color={color.textSecondary} />}
+      caption={rotation ? `Site rotation · last ${rotation.windowSize}` : 'Site rotation'}
+    >
+      {!rotation ? (
+        <Small>No injections logged yet.</Small>
+      ) : (
+        <View>
+          <Row gap={spacing.sm} wrap>
+            {rotation.counts.map(({ site, count }) => (
+              <View
+                key={site}
+                accessible
+                accessibilityLabel={`${INJECTION_SITE_LABELS[site]}: ${count} time${count === 1 ? '' : 's'} in the last ${rotation.windowSize}`}
+                style={[styles.siteCell, { borderColor: color.border, backgroundColor: color.surface }]}
+              >
+                <View style={[styles.siteCount, { backgroundColor: withOpacity(color.primary, mode === 'dark' ? 0.3 : 0.16) }]}>
+                  <Data small color={color.textPrimary}>{`×${count}`}</Data>
+                </View>
+                <Caption color={color.textTertiary} style={{ marginTop: spacing.xs }}>
+                  {SITE_SHORT_LABEL[site]}
+                </Caption>
+              </View>
+            ))}
+          </Row>
+          <Caption color={color.textTertiary} style={{ marginTop: spacing.md }}>
+            {rotation.note}
+          </Caption>
+        </View>
+      )}
+    </Tile>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Overview — moved from Summary (THEA-38b): the adherence/compound counters
 // belong with the rest of "how am I doing", not the "what's next" screen.
 // ---------------------------------------------------------------------------
@@ -517,7 +927,7 @@ function OverviewSection({
 }: {
   stack: Stack | null;
   doseLogs: Record<string, DoseLog>;
-  injectionLogs: unknown[];
+  injectionLogs: InjectionLog[];
   onOpenAnalytics: () => void;
 }) {
   const adherencePct = useMemo(() => {
@@ -528,14 +938,17 @@ function OverviewSection({
   }, [stack, doseLogs]);
 
   return (
-    <Section title="Overview">
+    <View>
+      <Caption>Overview</Caption>
+      <Spacer size={spacing.sm} />
       <Row gap={spacing.md}>
-        <StatTile label="Adherence · 14d" value={adherencePct === null ? '—' : `${adherencePct}%`} />
-        <StatTile label="Active compounds" value={`${stack?.items.length ?? 0}`} />
-        <StatTile label="Logged injections" value={`${injectionLogs.length}`} />
+        <Tile elevation="low" caption="Adherence · 14d" value={adherencePct === null ? '—' : `${adherencePct}%`} style={{ flex: 1 }} />
+        <Tile elevation="low" caption="Active compounds" value={`${stack?.items.length ?? 0}`} style={{ flex: 1 }} />
+        <Tile elevation="low" caption="Logged injections" value={`${injectionLogs.length}`} style={{ flex: 1 }} />
       </Row>
+      <Spacer size={spacing.md} />
       <Button label="Open full analytics" variant="ghost" onPress={onOpenAnalytics} />
-    </Section>
+    </View>
   );
 }
 
@@ -757,6 +1170,27 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: radius.md,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  siteCell: {
+    minWidth: 76,
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.md,
+  },
+  siteCount: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },

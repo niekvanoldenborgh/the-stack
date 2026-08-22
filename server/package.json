@@ -2,12 +2,13 @@
   "name": "the-stack-server",
   "version": "0.1.0",
   "private": true,
-  "description": "Backend/account-schema tooling for the-stack. Not bundled into the Expo app — see server/README.md.",
+  "description": "Backend/account-schema tooling for the-stack. Not bundled into the Expo app \u2014 see server/README.md.",
   "type": "module",
   "scripts": {
-    "migrate": "node scripts/migrate.mjs",
-    "start": "node src/server.mjs",
-    "test": "node --test \"test/**/*.test.mjs\""
+    "migrate": "node --env-file=.env scripts/migrate.mjs",
+    "start": "node --env-file=.env src/server.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "dev": "node --env-file=.env --watch src/server.mjs"
   },
   "dependencies": {
     "argon2": "^0.45.1",

@@ -312,3 +312,43 @@ twice against the same schema before the duplication was caught:
 - **THEA-94** — `ip_hash` HMAC pepper, `data_subject_requests` `SET NULL`
   fix, `audit_log.metadata` PII-after-erasure guardrail. Tracked and worked
   separately; not duplicated here.
+
+## Running locally on macOS (no Docker)
+
+The compose setup targets a server. To run the whole thing on a Mac against a
+local MariaDB/MySQL, skip Docker entirely:
+
+```bash
+brew services start mariadb            # or mysql
+
+# one-off: database + a least-privilege user
+mysql -e "CREATE DATABASE IF NOT EXISTS the_stack_db;"
+mysql -e "CREATE USER IF NOT EXISTS 'ai_dev'@'localhost' IDENTIFIED BY '<pw>';"
+mysql -e "GRANT ALL PRIVILEGES ON the_stack_db.* TO 'ai_dev'@'localhost'; FLUSH PRIVILEGES;"
+
+cp .env.example .env                   # then fill it in — see the note below
+npm install
+npm run migrate
+npm start                              # -> :3001, GET /healthz returns {"ok":true}
+```
+
+**`DB_HOST` must be `127.0.0.1` here, not `mysql`.** The `mysql` hostname in
+`.env.example` only resolves inside the docker-compose network (THEA-111);
+using it on a Mac gives `ENOTFOUND`/`ECONNREFUSED`.
+
+**Routes are mounted under `/api/auth`**, not at the root — `POST /register`
+404s, `POST /api/auth/register` is correct (`src/app.mjs`). Only `/healthz`
+lives at the root.
+
+`migrate`, `start` and `dev` all pass `--env-file=.env`, so the vars load
+without exporting them by hand. Previously they read `process.env` directly and
+relied on the runtime providing the values, which is why running them straight
+from a shell failed with a missing-`JWT_SECRET` boot error.
+
+### Pointing the Expo app at it
+
+Set `EXPO_PUBLIC_API_BASE_URL` in the **repo-root** `.env` (Expo only inlines
+`EXPO_PUBLIC_`-prefixed vars). It defaults to `http://localhost:3001`, which
+works in a simulator but not on a physical phone — there `localhost` is the
+phone. Use the Mac's LAN address, e.g. `http://192.168.x.x:3001`, and keep both
+devices on the same network.

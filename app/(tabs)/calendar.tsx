@@ -1,3 +1,4 @@
+import { Check, Clock, Minus, X } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -5,7 +6,13 @@ import { Pressable, View } from 'react-native';
 import { getPeptide } from '../../src/domain/peptides';
 import { severityBand } from '../../src/domain/sideEffects';
 import type { PhaseKind, ScheduledDose } from '../../src/domain/types';
-import { buildCyclePhases, generateSchedule, groupPhasesByPeptide } from '../../src/engine/cycle';
+import {
+  buildCyclePhases,
+  cyclePlanProgressPct,
+  generateSchedule,
+  groupPhasesByPeptide,
+  summariseCycle,
+} from '../../src/engine/cycle';
 import { formatDose } from '../../src/engine/dosing';
 import {
   addDays,
@@ -14,12 +21,14 @@ import {
   formatRange,
   startOfWeek,
   today,
+  WEEKDAY_LABELS,
   weekdayIndex,
 } from '../../src/lib/date';
 import { useActiveStack, useAppStore } from '../../src/store/useAppStore';
 import {
   Badge,
   Body,
+  Callout,
   Caption,
   Data,
   Display,
@@ -30,21 +39,23 @@ import {
   Small,
   Spacer,
 } from '../../src/ui/components';
+import { routeLabel } from '../../src/ui/icons';
+import { PhaseBar, type PhaseBarSegment } from '../../src/ui/nocturne';
 import { Section } from '../../src/ui/primitives';
-import { MetaChip, TimelineRow, WeekStrip } from '../../src/ui/schedule';
+import { MetaChip, TimelineRow } from '../../src/ui/schedule';
 import type { DayMarker } from '../../src/ui/schedule';
 import { radius, spacing, useTheme, type SeverityTone } from '../../src/ui/theme';
 
 /**
- * Calendar (page 4), redesigned THEA-40.
+ * Calendar (page 4), redesigned THEA-40, retinted NOCTURNE.
  *
- * The timeline primitives (`WeekStrip`, `TimelineRow`, `MetaChip`) are
- * untouched — they were already the "real timeline" this design language
- * asks for. What changed is the four separately-bordered `Card`s around
- * them: the cycle overview, the show/hide filters, the week strip and the
- * selected day now each sit in one borderless `Section` instead, so the
- * screen reads as four grouped decisions rather than four boxes stacked on
- * top of a fifth (the timeline itself).
+ * The timeline primitives (`TimelineRow`, `MetaChip`) are untouched — they
+ * were already the "real timeline" this design language asks for. What
+ * changed is the four separately-bordered `Card`s around them: the cycle
+ * overview, the show/hide filters, the week strip and the selected day now
+ * each sit in one borderless `Section` instead, so the screen reads as four
+ * grouped decisions rather than four boxes stacked on top of a fifth (the
+ * timeline itself).
  *
  * Three things share one timeline: injections you have already logged, the
  * injections still coming, and the side effects you have recorded. A week
@@ -54,11 +65,19 @@ import { radius, spacing, useTheme, type SeverityTone } from '../../src/ui/theme
  * opens this tab to do (THEA-40 owner feedback: this screen is for "what's
  * happening", not reference material).
  *
- * Below the day-to-day, each compound's cycle is drawn as a phase bar —
- * loading, fully on, rotating off — so the shape of a plan that can run past
- * new year is visible at a glance rather than reconstructed from a list of
- * dates. A per-peptide progress bar with the same "how far through" figure
- * also lives on Summary, next to the current stack (`app/(tabs)/index.tsx`).
+ * Below the day-to-day, each compound's cycle is drawn with the shared
+ * `PhaseBar` (`src/ui/nocturne.tsx`) — loading, fully on, rotating off — so
+ * the shape of a plan that can run past new year is visible at a glance
+ * rather than reconstructed from a list of dates. This replaces the screen's
+ * former local `CyclePhaseBar`, which coloured phases by *type* using a
+ * severity tone decoratively; `PhaseBar` colours by *state* (done / current /
+ * upcoming) at one hue instead, per AGENTS.md's severity-scale reservation.
+ *
+ * Below that, "Cycle overview" lines every active compound up on one shared
+ * week axis with a single current-week marker and a callout for whatever
+ * changes next in the plan — `summariseCycle` already computes that "next
+ * change" fact per compound, so the callout states a real number rather than
+ * a guess.
  */
 
 // ---------------------------------------------------------------------------
@@ -66,16 +85,15 @@ import { radius, spacing, useTheme, type SeverityTone } from '../../src/ui/theme
 // ---------------------------------------------------------------------------
 
 /**
- * Phase colours are chosen to read as loading → on → off without borrowing the
- * severity scale: info for the ramp, the brand accent for full strength, a
- * muted ink for the washout. Each segment also carries a label, so the
- * meaning never rests on colour alone. `tone` is resolved to an actual colour
- * via `theme.tone(...)` at render time (washout has no tone — it falls back
- * to `textTertiary`), since tone resolution now depends on the live theme.
+ * Phase labels only — no colour. The old version of this file coloured
+ * titration/on with `theme.tone('info')`/`theme.tone('accent')`, which reads
+ * straight off `color.severity` for a non-severity fact (AGENTS.md: severity
+ * colour is reserved for danger, never decorative). The phase name is stated
+ * in text everywhere it appears instead.
  */
-const PHASE_META: Record<PhaseKind, { label: string; tone?: SeverityTone }> = {
-  titration: { label: 'Loading', tone: 'info' },
-  on: { label: 'Fully on', tone: 'accent' },
+const PHASE_META: Record<PhaseKind, { label: string }> = {
+  titration: { label: 'Loading' },
+  on: { label: 'Fully on' },
   washout: { label: 'Rotating off' },
 };
 
@@ -96,6 +114,14 @@ const DOSE_STATUS_META: Record<DoseStatus, { label: string; tone: SeverityTone; 
   skipped: { label: 'Skipped', tone: 'moderate', dimmed: true },
   missed: { label: 'Missed', tone: 'high', dimmed: true },
   due: { label: 'Due', tone: 'info', dimmed: false },
+};
+
+/** Taken/due/missed/skipped are never colour-only — each also gets its own icon shape. */
+const STATUS_ICON: Record<DoseStatus, typeof Check> = {
+  taken: Check,
+  due: Clock,
+  missed: X,
+  skipped: Minus,
 };
 
 interface DoseEvent {
@@ -127,7 +153,14 @@ function classifyDose(dose: ScheduledDose, logged: 'taken' | 'skipped' | undefin
 }
 
 export default function CalendarScreen() {
-  const { color } = useTheme();
+  const theme = useTheme();
+  const { color, mode } = theme;
+  // Dark reads emphasis as a glow (brand primary itself); light has no
+  // visible glow, so emphasis is the same hue pushed darker instead. Shared
+  // by the day strip's selected cell and the cycle overview's current-week
+  // marker — see the identical rule in `src/ui/nocturne.tsx`.
+  const emphasis = mode === 'dark' ? color.primary : color.primaryPressed;
+
   const stack = useActiveStack();
   const doseLogs = useAppStore((s) => s.doseLogs);
   const sideEffectLogs = useAppStore((s) => s.sideEffectLogs);
@@ -154,6 +187,10 @@ export default function CalendarScreen() {
   const cyclePhases = useMemo(() => (stack ? buildCyclePhases(stack) : []), [stack]);
 
   const phasesByPeptide = useMemo(() => groupPhasesByPeptide(cyclePhases), [cyclePhases]);
+
+  // Per-compound "what changes next" — same real fact the cycle-overview
+  // callout states, computed once here.
+  const cycleSummaries = useMemo(() => (stack ? summariseCycle(stack, now) : []), [stack, now]);
 
   if (!stack) {
     return (
@@ -230,6 +267,53 @@ export default function CalendarScreen() {
     });
   };
 
+  // -------------------------------------------------------------------------
+  // Cycle overview — every active compound on one shared week axis.
+  //
+  // `buildCyclePhases` starts every item's timeline on the same
+  // `stack.startDate`, so the axis start never needs padding — only a
+  // compound whose plan finishes early needs a trailing "Ended" segment to
+  // keep every track's total width equal (that's what makes the bars line up
+  // as one shared axis instead of each stretching to fill its own row).
+  // -------------------------------------------------------------------------
+  const axisStart = cyclePhases[0]?.startDate ?? null;
+  const axisEnd =
+    cyclePhases.length > 0
+      ? cyclePhases.reduce((max, phase) => (phase.endDate > max ? phase.endDate : max), cyclePhases[0]!.endDate)
+      : null;
+  const axisTotalDays = axisStart && axisEnd ? diffDays(axisStart, axisEnd) + 1 : 0;
+  const axisTotalWeeks = axisTotalDays > 0 ? Math.max(1, Math.ceil(axisTotalDays / 7)) : 0;
+  const axisPosition =
+    axisStart && axisTotalDays > 0 ? Math.max(0, Math.min(1, (diffDays(axisStart, now) + 1) / axisTotalDays)) : null;
+  const currentWeekNumber =
+    axisStart && axisTotalWeeks > 0
+      ? Math.min(axisTotalWeeks, Math.max(1, Math.ceil((diffDays(axisStart, now) + 1) / 7)))
+      : null;
+
+  const overviewTracks =
+    axisStart && axisEnd
+      ? stackPeptideIds
+          .map((id) => {
+            const phases = phasesByPeptide.get(id);
+            if (!phases || phases.length === 0) return null;
+            const trackEnd = phases[phases.length - 1]!.endDate;
+            const activeDays = Math.max(1, diffDays(axisStart, trackEnd) + 1);
+            const segments: PhaseBarSegment[] = [{ key: 'active', label: 'Active', length: activeDays }];
+            const remainingDays = diffDays(trackEnd, axisEnd);
+            if (remainingDays > 0) {
+              segments.push({ key: 'ended', label: 'Ended', length: remainingDays });
+            }
+            return { peptideId: id, name: getPeptide(id)?.name ?? id, segments };
+          })
+          .filter((track): track is { peptideId: string; name: string; segments: PhaseBarSegment[] } => track !== null)
+      : [];
+
+  const upcomingChanges = cycleSummaries.filter((s) => s.daysUntilChange !== null);
+  const nextChange =
+    upcomingChanges.length > 0
+      ? upcomingChanges.reduce((soonest, s) => (s.daysUntilChange! < soonest.daysUntilChange! ? s : soonest))
+      : null;
+
   return (
     <Screen>
       <Caption color={color.primary}>Schedule</Caption>
@@ -265,7 +349,7 @@ export default function CalendarScreen() {
         ) : null}
       </Section>
 
-      {/* Week strip --------------------------------------------------------- */}
+      {/* Week strip — selected day + how many doses fall on each day. -------- */}
       <Section
         title={formatRange(weekDates[0]!, weekDates[6]!)}
         action={
@@ -275,11 +359,12 @@ export default function CalendarScreen() {
           </Row>
         }
       >
-        <WeekStrip days={dayMarkers} selected={selected} onSelect={setSelected} />
+        <DayStrip days={dayMarkers} selected={selected} onSelect={setSelected} />
       </Section>
 
       {/* Selected day ------------------------------------------------------- */}
       <Section title={formatLong(selected)}>
+        {selectedEvents.some((e) => e.kind === 'dose') ? <DoseStatusLegend /> : null}
         {selectedEvents.length === 0 ? (
           <Small style={{ textAlign: 'center' }}>Nothing on this day with the current filters.</Small>
         ) : (
@@ -303,81 +388,172 @@ export default function CalendarScreen() {
         )}
       </Section>
 
-      {/* Cycle overview — reference material, so it sits below the day-to-day. */}
-      <Section title="Stack cycle" gap={spacing.xl} last>
+      {/* Per-compound cycle — loading / fully on / rotating off. ------------ */}
+      <Section title="Stack cycle" gap={spacing.xl}>
         {stackPeptideIds.map((id, index) => {
           const phases = phasesByPeptide.get(id);
           if (!phases || phases.length === 0) return null;
+          const pct = cyclePlanProgressPct(phases, now);
+          const segments: PhaseBarSegment[] = phases.map((phase, i) => ({
+            key: `${phase.kind}-${i}`,
+            label: PHASE_META[phase.kind].label,
+            length: Math.max(1, diffDays(phase.startDate, phase.endDate) + 1),
+            detail: formatRange(phase.startDate, phase.endDate),
+          }));
           return (
             <View key={id}>
               {index > 0 ? <Divider style={{ marginBottom: spacing.xl }} /> : null}
-              <CyclePhaseBar name={getPeptide(id)?.name ?? id} phases={phases} />
+              <Body style={{ marginBottom: spacing.md }}>{getPeptide(id)?.name ?? id}</Body>
+              <PhaseBar segments={segments} position={pct === null ? undefined : pct / 100} />
             </View>
           );
         })}
       </Section>
+
+      {/* Cycle overview — every compound, one shared axis, one marker. ------ */}
+      {overviewTracks.length > 0 ? (
+        <Section
+          title="Cycle overview"
+          gap={spacing.lg}
+          action={currentWeekNumber !== null ? <Caption color={emphasis}>{`Week ${currentWeekNumber} of ${axisTotalWeeks}`}</Caption> : undefined}
+          last
+        >
+          <View style={{ position: 'relative', gap: spacing.lg }}>
+            {overviewTracks.map((track) => (
+              <View key={track.peptideId}>
+                <Data small color={color.textPrimary} style={{ marginBottom: spacing.sm }}>
+                  {track.name}
+                </Data>
+                <PhaseBar segments={track.segments} position={axisPosition ?? undefined} />
+              </View>
+            ))}
+            {/* One shared current-week marker across every track, not one per row. */}
+            {axisPosition !== null ? (
+              <View
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: `${axisPosition * 100}%`,
+                  width: 2,
+                  marginLeft: -1,
+                  borderRadius: 1,
+                  backgroundColor: emphasis,
+                }}
+              />
+            ) : null}
+          </View>
+
+          <Row justify="space-between">
+            <Small>Week 1</Small>
+            <Small>{`Week ${axisTotalWeeks}`}</Small>
+          </Row>
+
+          {nextChange ? (
+            <Callout tone="accent" title={`Next: ${nextChange.nextChangeLabel}`}>
+              {`${nextChange.name} · in ${nextChange.daysUntilChange} day${nextChange.daysUntilChange === 1 ? '' : 's'}`}
+            </Callout>
+          ) : (
+            <Small>Every compound in this stack has finished its planned cycle.</Small>
+          )}
+        </Section>
+      ) : null}
     </Screen>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Cycle phase bar
+// Week strip
 // ---------------------------------------------------------------------------
 
-function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<typeof buildCyclePhases> }) {
+/**
+ * Local, not the shared `WeekStrip` (`src/ui/schedule.tsx`): that component's
+ * per-day marker is a plain presence dot, not a count, and this screen needs
+ * an actual "how many doses" figure per day. Selection/date logic is
+ * untouched — only the per-day visual is new.
+ */
+function DayStrip({ days, selected, onSelect }: { days: DayMarker[]; selected: string; onSelect: (date: string) => void }) {
   const theme = useTheme();
-  const { color } = theme;
-  const phaseColor = (kind: PhaseKind) => {
-    const tone = PHASE_META[kind].tone;
-    return tone ? theme.tone(tone).fg : color.textTertiary;
-  };
+  const { color, mode } = theme;
+  const emphasis = mode === 'dark' ? color.primary : color.primaryPressed;
 
   return (
-    <View>
-      <Body style={{ marginBottom: spacing.sm }}>{name}</Body>
-
-      {/* Proportional bar: segment width follows phase length in days. */}
-      <Row gap={2} style={{ height: 10 }}>
-        {phases.map((phase, index) => {
-          const days = Math.max(1, diffDays(phase.startDate, phase.endDate) + 1);
-          return (
-            <View
-              key={`${phase.kind}-${index}`}
-              style={{
-                flexGrow: days,
-                flexBasis: 0,
-                borderRadius: radius.sm,
-                backgroundColor: phaseColor(phase.kind),
-                opacity: phase.kind === 'washout' ? 0.5 : 1,
-              }}
-            />
-          );
-        })}
-      </Row>
-
-      <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
-        {phases.map((phase, index) => {
-          const meta = PHASE_META[phase.kind];
-          return (
-            <Row key={`row-${phase.kind}-${index}`} gap={spacing.sm} align="center">
+    <Row gap={spacing.xs} justify="space-between">
+      {days.map((day) => {
+        const isSelected = day.date === selected;
+        const dayNumber = Number(day.date.slice(8, 10));
+        return (
+          <Pressable
+            key={day.date}
+            onPress={() => onSelect(day.date)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected }}
+            accessibilityLabel={`${WEEKDAY_LABELS[weekdayIndex(day.date)]} ${dayNumber}, ${day.count} dose${day.count === 1 ? '' : 's'}`}
+            style={({ pressed }) => ({
+              flex: 1,
+              minHeight: 44,
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.xs,
+              paddingVertical: spacing.sm,
+              borderRadius: radius.md,
+              borderWidth: 1,
+              borderColor: isSelected ? emphasis : 'transparent',
+              backgroundColor: isSelected ? color.primarySoft : 'transparent',
+              opacity: pressed ? 0.75 : 1,
+            })}
+          >
+            <Caption color={color.textTertiary}>{WEEKDAY_LABELS[weekdayIndex(day.date)]}</Caption>
+            <Data color={isSelected ? emphasis : color.textPrimary} style={{ fontSize: 17 }}>
+              {dayNumber}
+            </Data>
+            {/* Density indicator — the real per-day dose count, not a plain dot. */}
+            {day.count > 0 ? (
               <View
                 style={{
-                  width: 9,
-                  height: 9,
-                  borderRadius: 2,
-                  backgroundColor: phaseColor(phase.kind),
-                  opacity: phase.kind === 'washout' ? 0.6 : 1,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: emphasis,
                 }}
-              />
-              <Data small color={color.textPrimary} style={{ width: 92 }}>
-                {meta.label}
-              </Data>
-              <Small style={{ flex: 1 }}>{formatRange(phase.startDate, phase.endDate)}</Small>
-            </Row>
-          );
-        })}
-      </View>
-    </View>
+              >
+                <Data small color={color.background} style={{ fontSize: 10 }}>
+                  {day.count}
+                </Data>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </Row>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dose status legend — icon + label per state, colour is never the only cue.
+// ---------------------------------------------------------------------------
+
+const LEGEND_ORDER: DoseStatus[] = ['taken', 'due', 'missed', 'skipped'];
+
+function DoseStatusLegend() {
+  const theme = useTheme();
+  return (
+    <Row gap={spacing.md} wrap style={{ marginBottom: spacing.md }}>
+      {LEGEND_ORDER.map((status) => {
+        const meta = DOSE_STATUS_META[status];
+        const Icon = STATUS_ICON[status];
+        return (
+          <Row key={status} gap={spacing.xs} align="center">
+            <Icon size={13} color={theme.tone(meta.tone).fg} />
+            <Small>{meta.label}</Small>
+          </Row>
+        );
+      })}
+    </Row>
   );
 }
 
@@ -385,27 +561,35 @@ function CyclePhaseBar({ name, phases }: { name: string; phases: ReturnType<type
 // Timeline rows
 // ---------------------------------------------------------------------------
 
+// TODO(nocturne): the mockup's timeline row shows an injection *site* per
+// dose. `ScheduledDose` carries no site — sites are only recorded on
+// `InjectionLog` entries (`src/domain/types.ts`), which have no
+// `scheduledDoseId` back-reference, so a scheduled dose here can't be
+// reliably matched to the site the user actually used for it. `route` is
+// shown instead — it's known ahead of time and never invented. Wiring a real
+// site would need that back-reference added to `InjectionLog` or `DoseLog`.
 function DoseTimelineRow({ event, first, last }: { event: DoseEvent; first: boolean; last: boolean }) {
   const theme = useTheme();
+  const { color } = theme;
   const peptide = getPeptide(event.dose.peptideId);
   const meta = DOSE_STATUS_META[event.status];
+  const StatusIcon = STATUS_ICON[event.status];
   return (
     <TimelineRow time={event.time} tone={meta.tone} first={first} last={last} dimmed={meta.dimmed}>
       <Row justify="space-between" align="flex-start">
         <View style={{ flex: 1 }}>
           <Body>{peptide?.name ?? event.dose.peptideId}</Body>
-          <Row gap={spacing.xs} align="center" style={{ marginTop: spacing.xs }}>
-            <Data small color={theme.color.textSecondary}>
-              {formatDose(event.dose.dose)}
+          <Row gap={spacing.xs} align="center" wrap style={{ marginTop: spacing.xs }}>
+            <Data small color={color.textSecondary}>
+              {formatDose(event.dose.dose)} · {routeLabel(event.dose.route)}
             </Data>
-            <MetaChip
-              icon="repeat"
-              label={PHASE_META[event.dose.phase].label}
-              tone={PHASE_META[event.dose.phase].tone}
-            />
+            <MetaChip icon="repeat" label={PHASE_META[event.dose.phase].label} />
           </Row>
         </View>
-        <Badge label={meta.label} tone={meta.tone} />
+        <Row gap={spacing.xs} align="center">
+          <StatusIcon size={14} color={theme.tone(meta.tone).fg} />
+          <Badge label={meta.label} tone={meta.tone} />
+        </Row>
       </Row>
     </TimelineRow>
   );

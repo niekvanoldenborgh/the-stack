@@ -14,6 +14,7 @@
     "pretest": "tsc -p tsconfig.test.json",
     "test": "node --test \"tests/**/*.cjs\"",
     "icons": "node scripts/generate-icons.mjs",
+    "contrast": "node scripts/check-contrast.mjs",
     "colors": "node scripts/sample-colors.mjs"
   },
   "dependencies": {
