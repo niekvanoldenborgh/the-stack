@@ -1,0 +1,157 @@
+name: Android preview build
+
+# Builds a sideloadable APK and posts the download link to an n8n webhook.
+#
+# Deliberately NOT on every push to every branch: each run consumes an EAS
+# build (the free tier is limited, and Android builds take ~15-25 min). It runs
+# on main, on version tags, and on demand.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    # Docs/design changes should not spend a build.
+    paths-ignore:
+      - '**/*.md'
+      - 'design-lab/**'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        required: true
+        default: 'preview'
+        type: choice
+        options: [preview, production]
+
+concurrency:
+  # A newer push supersedes an in-flight build for the same ref.
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Gate the build on the same checks used locally. An APK that fails typecheck
+  # is worse than no APK: it gets installed and trusted.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Colour contrast + severity/evidence separation
+        run: npm run contrast
+      - name: Server tests
+        working-directory: server
+        run: npm test
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      apk-url: ${{ steps.build.outputs.apk-url }}
+      build-page: ${{ steps.build.outputs.build-page }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build APK on EAS
+        id: build
+        run: |
+          set -euo pipefail
+          PROFILE="${{ github.event.inputs.profile || 'preview' }}"
+          echo "Building profile: $PROFILE"
+
+          # --wait blocks until the build finishes; --json gives us the artifact
+          # URL without scraping human-readable output.
+          eas build \
+            --platform android \
+            --profile "$PROFILE" \
+            --non-interactive \
+            --wait \
+            --json > build.json
+
+          APK_URL=$(jq -r '.[0].artifacts.applicationArchiveUrl // empty' build.json)
+          BUILD_ID=$(jq -r '.[0].id // empty' build.json)
+          STATUS=$(jq -r '.[0].status // empty' build.json)
+
+          echo "status=$STATUS"
+          if [ -z "$APK_URL" ]; then
+            echo "::error::Build produced no artifact URL (status: $STATUS)"
+            jq '.' build.json || cat build.json
+            exit 1
+          fi
+
+          echo "apk-url=$APK_URL" >> "$GITHUB_OUTPUT"
+          echo "build-page=https://expo.dev/accounts/${{ vars.EXPO_ACCOUNT || 'nfpassistance-viniek' }}/projects/the-stack/builds/$BUILD_ID" >> "$GITHUB_OUTPUT"
+
+  notify:
+    needs: [verify, build]
+    # Runs even when an earlier job failed, so a broken build still tells you.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to n8n
+        env:
+          WEBHOOK: ${{ secrets.N8N_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "::warning::N8N_WEBHOOK_URL secret is not set — skipping notification."
+            exit 0
+          fi
+
+          OUTCOME="${{ needs.build.result }}"
+          VERIFY="${{ needs.verify.result }}"
+          APK="${{ needs.build.outputs.apk-url }}"
+          PAGE="${{ needs.build.outputs.build-page }}"
+
+          if [ "$VERIFY" != "success" ]; then
+            STATUS="verify_failed"
+            MESSAGE="Checks failed — no build was started."
+          elif [ "$OUTCOME" = "success" ] && [ -n "$APK" ]; then
+            STATUS="success"
+            MESSAGE="New Android build ready to install."
+          else
+            STATUS="build_failed"
+            MESSAGE="The Android build failed."
+          fi
+
+          # jq builds the payload so commit messages with quotes/newlines cannot
+          # break the JSON.
+          jq -n \
+            --arg status   "$STATUS" \
+            --arg message  "$MESSAGE" \
+            --arg apkUrl   "$APK" \
+            --arg buildPage "$PAGE" \
+            --arg repo     "${{ github.repository }}" \
+            --arg ref      "${{ github.ref_name }}" \
+            --arg sha      "${{ github.sha }}" \
+            --arg shortSha "$(echo "${{ github.sha }}" | cut -c1-7)" \
+            --arg actor    "${{ github.actor }}" \
+            --arg commit   "$(git log -1 --pretty=%s || echo '')" \
+            --arg runUrl   "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{status:$status, message:$message, apkUrl:$apkUrl, buildPage:$buildPage,
+              repo:$repo, branch:$ref, sha:$sha, shortSha:$shortSha, actor:$actor,
+              commitMessage:$commit, runUrl:$runUrl}' > payload.json
+
+          echo "Posting payload (apkUrl redacted in log):"
+          jq 'del(.apkUrl)' payload.json
+
+          curl --fail-with-body -sS -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            --data @payload.json
