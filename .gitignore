@@ -8,5 +8,8 @@
 # The .example templates are unaffected — this is an exact-name match, not
 # a prefix.
 .env
+.env.*
 .env.local
 .env.*.local
+!.env.example
+!.env.*.example

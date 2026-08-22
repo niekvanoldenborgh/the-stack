@@ -21,7 +21,17 @@ Repo → **Settings** → **Secrets and variables** → **Actions** → **New re
 | `EXPO_TOKEN` | the token from step 1 |
 | `N8N_WEBHOOK_URL` | your n8n **Production** webhook URL |
 
-Add them in GitHub directly. Don't paste either into a chat, a commit, or
+Or, to keep the dotenv workflow, copy `.env.ci.example` to `.env.ci` (gitignored),
+fill it in, and push both secrets at once:
+
+```bash
+brew install gh && gh auth login
+gh secret set -f .env.ci
+```
+
+Either way they end up in GitHub Secrets. A `.env` file committed to the repo
+cannot work: it is gitignored so CI never sees it, and un-ignoring it would put
+live credentials in a **public** repository, permanently in git history. Don't paste either into a chat, a commit, or
 `eas.json` — a webhook URL is a capability: anyone holding it can trigger your
 flow.
 
